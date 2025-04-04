@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
 
 	"github.com/valyala/bytebufferpool"
 )
@@ -41,13 +40,12 @@ func NewWriter(dstW io.Writer, newWriter NewWriterFunc) Writer {
 type writer struct {
 	dstW io.Writer
 	zw   Writer
+	xw   xWriter
 
 	err error
-	xw  xWriter
+	n   int
 
-	p []byte
-	n int
-
+	p  []byte
 	op op
 }
 
@@ -100,19 +98,9 @@ func (w *writer) do(op op) error {
 
 var errHighLoad = errors.New("cannot compress data due to high load")
 
-var (
-	stacklessWriterFuncOnce sync.Once
-	stacklessWriterFuncFunc func(ctx any) bool
-)
+var stacklessWriterFunc = NewFunc(writerFunc)
 
-func stacklessWriterFunc(ctx any) bool {
-	stacklessWriterFuncOnce.Do(func() {
-		stacklessWriterFuncFunc = NewFunc(writerFunc)
-	})
-	return stacklessWriterFuncFunc(ctx)
-}
-
-func writerFunc(ctx any) {
+func writerFunc(ctx interface{}) {
 	w := ctx.(*writer)
 	switch w.op {
 	case opWrite:

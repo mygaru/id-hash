@@ -75,7 +75,7 @@ func SendGpsiRequest(r GpsiRequest, uidMapperURI string, timeout time.Duration) 
 		fasthttp.ReleaseRequest(req)
 	}()
 
-	req.SetRequestURI(uidMapperURI)
+	req.SetRequestURI(uidMapperURI + "/pim")
 	req.Header.SetMethod(fasthttp.MethodPost)
 	req.Header.SetContentType("application/json")
 	req.SetBody(r)
@@ -86,7 +86,7 @@ func SendGpsiRequest(r GpsiRequest, uidMapperURI string, timeout time.Duration) 
 	}
 
 	if resp.StatusCode() != fasthttp.StatusNoContent {
-		return fmt.Errorf("error sending request to Uidmap, err: %s, got = %d (wanted 204)", err, resp.StatusCode())
+		return fmt.Errorf("error sending request to Uidmap (%s), got %d (wanted 204): %s", req.URI().String(), resp.StatusCode(), resp.Body())
 	}
 
 	return nil

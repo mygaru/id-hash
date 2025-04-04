@@ -2,9 +2,13 @@ module github.com/mygaru/gpsi
 
 go 1.23.6
 
+replace github.com/valyala/fasthttp => github.com/aradilov/fasthttp v1.44.1-0.20241125090156-c6a2d9a7be09
+
+replace github.com/refraction-networking/utls => gitlab.adtelligent.com/common/utls v0.0.0-20240808074214-f45d321b11d3
+
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/mygaru/uidmap v0.0.0-20250402090140-981e515eeb29
+	github.com/mygaru/uidmap v0.0.0-20250404091535-3f123bf941de
 	github.com/valyala/fasthttp v1.59.0
 	github.com/vharitonsky/iniflags v0.0.0-20180513140207-a33cd0b5f3de
 	gitlab.adtelligent.com/common/shared v0.0.0-20250319114405-b8043f2cf31c

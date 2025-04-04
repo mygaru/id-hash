@@ -1,4 +1,4 @@
-package gpsi
+package main
 
 import (
 	"flag"
@@ -41,7 +41,7 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	if pim.Route(path, ctx) {
+	if pim.Route(string(path), ctx) {
 		return
 	}
 

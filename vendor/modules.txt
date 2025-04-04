@@ -62,13 +62,13 @@ github.com/klauspost/compress/internal/snapref
 github.com/klauspost/compress/zlib
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
-# github.com/mygaru/uidmap v0.0.0-20250402090140-981e515eeb29
+# github.com/mygaru/uidmap v0.0.0-20250404091535-3f123bf941de
 ## explicit; go 1.23.2
 github.com/mygaru/uidmap/pkg/pim
 # github.com/oschwald/maxminddb-golang v1.8.0
 ## explicit; go 1.9
 github.com/oschwald/maxminddb-golang
-# github.com/refraction-networking/utls v1.6.7
+# github.com/refraction-networking/utls v1.6.7 => gitlab.adtelligent.com/common/utls v0.0.0-20240808074214-f45d321b11d3
 ## explicit; go 1.21
 github.com/refraction-networking/utls
 github.com/refraction-networking/utls/dicttls
@@ -79,8 +79,8 @@ github.com/refraction-networking/utls/internal/quicvarint/protocol
 # github.com/valyala/bytebufferpool v1.0.0
 ## explicit
 github.com/valyala/bytebufferpool
-# github.com/valyala/fasthttp v1.59.0
-## explicit; go 1.21
+# github.com/valyala/fasthttp v1.59.0 => github.com/aradilov/fasthttp v1.44.1-0.20241125090156-c6a2d9a7be09
+## explicit; go 1.22
 github.com/valyala/fasthttp
 github.com/valyala/fasthttp/fasthttpadaptor
 github.com/valyala/fasthttp/fasthttputil
@@ -180,3 +180,5 @@ google.golang.org/protobuf/reflect/protoreflect
 google.golang.org/protobuf/reflect/protoregistry
 google.golang.org/protobuf/runtime/protoiface
 google.golang.org/protobuf/runtime/protoimpl
+# github.com/valyala/fasthttp => github.com/aradilov/fasthttp v1.44.1-0.20241125090156-c6a2d9a7be09
+# github.com/refraction-networking/utls => gitlab.adtelligent.com/common/utls v0.0.0-20240808074214-f45d321b11d3

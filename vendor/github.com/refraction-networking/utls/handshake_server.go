@@ -145,6 +145,8 @@ func (c *Conn) readClientHello(ctx context.Context) (*clientHelloMsg, error) {
 		return nil, unexpectedMessageError(clientHello, msg)
 	}
 
+	c.clientHelloCustomExtData = clientHello.customExtData
+
 	var configForClient *Config
 	originalConfig := c.config
 	if c.config.GetConfigForClient != nil {

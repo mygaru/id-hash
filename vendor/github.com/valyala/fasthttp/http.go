@@ -17,18 +17,6 @@ import (
 	"github.com/valyala/bytebufferpool"
 )
 
-var (
-	requestBodyPoolSizeLimit  = -1
-	responseBodyPoolSizeLimit = -1
-)
-
-// SetBodySizePoolLimit set the max body size for bodies to be returned to the pool.
-// If the body size is larger it will be released instead of put back into the pool for reuse.
-func SetBodySizePoolLimit(reqBodyLimit, respBodyLimit int) {
-	requestBodyPoolSizeLimit = reqBodyLimit
-	responseBodyPoolSizeLimit = respBodyLimit
-}
-
 // Request represents HTTP request.
 //
 // It is forbidden copying Request instances. Create new instances
@@ -36,30 +24,23 @@ func SetBodySizePoolLimit(reqBodyLimit, respBodyLimit int) {
 //
 // Request instance MUST NOT be used from concurrently running goroutines.
 type Request struct {
-	noCopy noCopy
+	noCopy noCopy //nolint:unused,structcheck
 
-	bodyStream io.Reader
-	w          requestBodyWriter
-	body       *bytebufferpool.ByteBuffer
-
-	multipartForm         *multipart.Form
-	multipartFormBoundary string
-
-	postArgs Args
-
-	bodyRaw []byte
-
-	uri URI
-
-	// Request header.
+	// Request header
 	//
 	// Copying Header by value is forbidden. Use pointer to Header instead.
 	Header RequestHeader
 
-	// Request timeout. Usually set by DoDeadline or DoTimeout
-	// if <= 0, means not set
-	timeout time.Duration
+	uri      URI
+	postArgs Args
 
+	bodyStream io.Reader
+	w          requestBodyWriter
+	body       *bytebufferpool.ByteBuffer
+	bodyRaw    []byte
+
+	multipartForm         *multipart.Form
+	multipartFormBoundary string
 	secureErrorLogMessage bool
 
 	// Group bool members in order to reduce Request object size.
@@ -72,14 +53,12 @@ type Request struct {
 	// Client/HostClient shouldn't use this field but should depend on the uri.scheme instead.
 	isTLS bool
 
+	// Request timeout. Usually set by DoDeadline or DoTimeout
+	// if <= 0, means not set
+	timeout time.Duration
+
 	// Use Host header (request.Header.SetHost) instead of the host from SetRequestURI, SetHost, or URI().SetHost
 	UseHostHeader bool
-
-	// DisableRedirectPathNormalizing disables redirect path normalization when used with DoRedirects.
-	//
-	// By default redirect path values are normalized, i.e.
-	// extra slashes are removed, special characters are encoded.
-	DisableRedirectPathNormalizing bool
 }
 
 // Response represents HTTP response.
@@ -89,20 +68,9 @@ type Request struct {
 //
 // Response instance MUST NOT be used from concurrently running goroutines.
 type Response struct {
-	noCopy noCopy
+	noCopy noCopy //nolint:unused,structcheck
 
-	bodyStream io.Reader
-
-	// Remote TCPAddr from concurrently net.Conn.
-	raddr net.Addr
-	// Local TCPAddr from concurrently net.Conn.
-	laddr net.Addr
-	w     responseBodyWriter
-	body  *bytebufferpool.ByteBuffer
-
-	bodyRaw []byte
-
-	// Response header.
+	// Response header
 	//
 	// Copying Header by value is forbidden. Use pointer to Header instead.
 	Header ResponseHeader
@@ -111,9 +79,10 @@ type Response struct {
 	// Relevant for bodyStream only.
 	ImmediateHeaderFlush bool
 
-	// StreamBody enables response body streaming.
-	// Use SetBodyStream to set the body stream.
-	StreamBody bool
+	bodyStream io.Reader
+	w          responseBodyWriter
+	body       *bytebufferpool.ByteBuffer
+	bodyRaw    []byte
 
 	// Response.Read() skips reading body if set to true.
 	// Use it for reading HEAD responses.
@@ -124,6 +93,22 @@ type Response struct {
 
 	keepBodyBuffer        bool
 	secureErrorLogMessage bool
+
+	// Remote IP from concurrently net.Conn
+	raddr net.Addr
+	// Local IP from concurrently net.Conn
+	laddr net.Addr
+
+	connID         uint64
+	connRequestNum uint64
+
+	redirectsCount int
+}
+
+// GetTimeout returns request timeout, usually set by DoDeadline or DoTimeout
+// Method is available only for sub requests (ip.IsUnspecified() = true)
+func (req *Request) GetTimeout() time.Duration {
+	return req.timeout
 }
 
 // SetHost sets host for the request.
@@ -162,6 +147,11 @@ func (req *Request) RequestURI() []byte {
 	return req.Header.RequestURI()
 }
 
+// GetRedirectsCount returns amount of redirects while c.Do.
+func (resp *Response) GetRedirectsCount() int {
+	return resp.redirectsCount
+}
+
 // StatusCode returns response status code.
 func (resp *Response) StatusCode() int {
 	return resp.Header.StatusCode()
@@ -190,16 +180,6 @@ func (req *Request) ConnectionClose() bool {
 // SetConnectionClose sets 'Connection: close' header.
 func (req *Request) SetConnectionClose() {
 	req.Header.SetConnectionClose()
-}
-
-// GetTimeOut retrieves the timeout duration set for the Request.
-//
-// This method returns a time.Duration that determines how long the request
-// can wait before it times out. In the default use case, the timeout applies
-// to the entire request lifecycle, including both receiving the response
-// headers and the response body.
-func (req *Request) GetTimeOut() time.Duration {
-	return req.timeout
 }
 
 // SendFile registers file on the given path to be used as response body
@@ -264,12 +244,12 @@ func (resp *Response) SetBodyStream(bodyStream io.Reader, bodySize int) {
 	resp.Header.SetContentLength(bodySize)
 }
 
-// IsBodyStream returns true if body is set via SetBodyStream*.
+// IsBodyStream returns true if body is set via SetBodyStream*
 func (req *Request) IsBodyStream() bool {
 	return req.bodyStream != nil
 }
 
-// IsBodyStream returns true if body is set via SetBodyStream*.
+// IsBodyStream returns true if body is set via SetBodyStream*
 func (resp *Response) IsBodyStream() bool {
 	return resp.bodyStream != nil
 }
@@ -285,7 +265,7 @@ func (resp *Response) IsBodyStream() bool {
 //
 // Note that GET and HEAD requests cannot have body.
 //
-// See also SetBodyStream.
+// / See also SetBodyStream.
 func (req *Request) SetBodyStreamWriter(sw StreamWriter) {
 	sr := NewStreamReader(sw)
 	req.SetBodyStream(sr, -1)
@@ -316,52 +296,6 @@ func (resp *Response) BodyWriter() io.Writer {
 	return &resp.w
 }
 
-// BodyStream returns io.Reader.
-//
-// You must CloseBodyStream or ReleaseRequest after you use it.
-func (req *Request) BodyStream() io.Reader {
-	return req.bodyStream
-}
-
-func (req *Request) CloseBodyStream() error {
-	return req.closeBodyStream()
-}
-
-// BodyStream returns io.Reader.
-//
-// You must CloseBodyStream or ReleaseResponse after you use it.
-func (resp *Response) BodyStream() io.Reader {
-	return resp.bodyStream
-}
-
-func (resp *Response) CloseBodyStream() error {
-	return resp.closeBodyStream(nil)
-}
-
-type ReadCloserWithError interface {
-	io.Reader
-	CloseWithError(err error) error
-}
-
-type closeReader struct {
-	io.Reader
-	closeFunc func(err error) error
-}
-
-func newCloseReaderWithError(r io.Reader, closeFunc func(err error) error) ReadCloserWithError {
-	if r == nil {
-		panic(`BUG: reader is nil`)
-	}
-	return &closeReader{Reader: r, closeFunc: closeFunc}
-}
-
-func (c *closeReader) CloseWithError(err error) error {
-	if c.closeFunc == nil {
-		return nil
-	}
-	return c.closeFunc(err)
-}
-
 // BodyWriter returns writer for populating request body.
 func (req *Request) BodyWriter() io.Writer {
 	req.w.r = req
@@ -386,19 +320,33 @@ func (w *requestBodyWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (resp *Response) ParseNetConn(conn net.Conn) {
-	resp.raddr = conn.RemoteAddr()
-	resp.laddr = conn.LocalAddr()
+func (resp *Response) parseNetConn(conn net.Conn) {
+	resp.raddr = copyAddr(conn.RemoteAddr())
+	resp.laddr = copyAddr(conn.LocalAddr())
 }
 
-// RemoteAddr returns the remote network address. The Addr returned is shared
-// by all invocations of RemoteAddr, so do not modify it.
+// ConnRequestNum returns request sequence number
+// for the current connection.
+//
+// Sequence starts with 1.
+func (resp *Response) ConnRequestNum() uint64 {
+	return resp.connRequestNum
+}
+
+// ConnID returns unique connection ID.
+//
+// This ID may be used to match distinct requests to the same incoming
+// connection.
+func (resp *Response) ConnID() uint64 {
+	return resp.connID
+}
+
+// RemoteAddr returns the remote network address.
 func (resp *Response) RemoteAddr() net.Addr {
 	return resp.raddr
 }
 
-// LocalAddr returns the local network address. The Addr returned is shared
-// by all invocations of LocalAddr, so do not modify it.
+// LocalAddr returns the local network address.
 func (resp *Response) LocalAddr() net.Addr {
 	return resp.laddr
 }
@@ -413,7 +361,7 @@ func (resp *Response) Body() []byte {
 		bodyBuf := resp.bodyBuffer()
 		bodyBuf.Reset()
 		_, err := copyZeroAlloc(bodyBuf, resp.bodyStream)
-		resp.closeBodyStream(err) //nolint:errcheck
+		resp.closeBodyStream() //nolint:errcheck
 		if err != nil {
 			bodyBuf.SetString(err.Error())
 		}
@@ -547,23 +495,6 @@ func (ctx *RequestCtx) RequestBodyStream() io.Reader {
 	return ctx.Request.bodyStream
 }
 
-func (req *Request) BodyUnzstd() ([]byte, error) {
-	return unzstdData(req.Body())
-}
-
-func (resp *Response) BodyUnzstd() ([]byte, error) {
-	return unzstdData(resp.Body())
-}
-
-func unzstdData(p []byte) ([]byte, error) {
-	var bb bytebufferpool.ByteBuffer
-	_, err := WriteUnzstd(&bb, p)
-	if err != nil {
-		return nil, err
-	}
-	return bb.B, nil
-}
-
 func inflateData(p []byte) ([]byte, error) {
 	var bb bytebufferpool.ByteBuffer
 	_, err := WriteInflate(&bb, p)
@@ -571,52 +502,6 @@ func inflateData(p []byte) ([]byte, error) {
 		return nil, err
 	}
 	return bb.B, nil
-}
-
-var ErrContentEncodingUnsupported = errors.New("unsupported Content-Encoding")
-
-// BodyUncompressed returns body data and if needed decompress it from gzip, deflate or Brotli.
-//
-// This method may be used if the response header contains
-// 'Content-Encoding' for reading uncompressed request body.
-// Use Body for reading the raw request body.
-func (req *Request) BodyUncompressed() ([]byte, error) {
-	switch string(req.Header.ContentEncoding()) {
-	case "":
-		return req.Body(), nil
-	case "deflate":
-		return req.BodyInflate()
-	case "gzip":
-		return req.BodyGunzip()
-	case "br":
-		return req.BodyUnbrotli()
-	case "zstd":
-		return req.BodyUnzstd()
-	default:
-		return nil, ErrContentEncodingUnsupported
-	}
-}
-
-// BodyUncompressed returns body data and if needed decompress it from gzip, deflate or Brotli.
-//
-// This method may be used if the response header contains
-// 'Content-Encoding' for reading uncompressed response body.
-// Use Body for reading the raw response body.
-func (resp *Response) BodyUncompressed() ([]byte, error) {
-	switch string(resp.Header.ContentEncoding()) {
-	case "":
-		return resp.Body(), nil
-	case "deflate":
-		return resp.BodyInflate()
-	case "gzip":
-		return resp.BodyGunzip()
-	case "br":
-		return resp.BodyUnbrotli()
-	case "zstd":
-		return resp.BodyUnzstd()
-	default:
-		return nil, ErrContentEncodingUnsupported
-	}
 }
 
 // BodyWriteTo writes request body to w.
@@ -637,7 +522,7 @@ func (req *Request) BodyWriteTo(w io.Writer) error {
 func (resp *Response) BodyWriteTo(w io.Writer) error {
 	if resp.bodyStream != nil {
 		_, err := copyZeroAlloc(w, resp.bodyStream)
-		resp.closeBodyStream(err) //nolint:errcheck
+		resp.closeBodyStream() //nolint:errcheck
 		return err
 	}
 	_, err := w.Write(resp.bodyBytes())
@@ -648,13 +533,13 @@ func (resp *Response) BodyWriteTo(w io.Writer) error {
 //
 // It is safe re-using p after the function returns.
 func (resp *Response) AppendBody(p []byte) {
-	resp.closeBodyStream(nil)  //nolint:errcheck
+	resp.closeBodyStream()     //nolint:errcheck
 	resp.bodyBuffer().Write(p) //nolint:errcheck
 }
 
 // AppendBodyString appends s to response body.
 func (resp *Response) AppendBodyString(s string) {
-	resp.closeBodyStream(nil)        //nolint:errcheck
+	resp.closeBodyStream()           //nolint:errcheck
 	resp.bodyBuffer().WriteString(s) //nolint:errcheck
 }
 
@@ -662,7 +547,7 @@ func (resp *Response) AppendBodyString(s string) {
 //
 // It is safe re-using body argument after the function returns.
 func (resp *Response) SetBody(body []byte) {
-	resp.closeBodyStream(nil) //nolint:errcheck
+	resp.closeBodyStream() //nolint:errcheck
 	bodyBuf := resp.bodyBuffer()
 	bodyBuf.Reset()
 	bodyBuf.Write(body) //nolint:errcheck
@@ -670,7 +555,7 @@ func (resp *Response) SetBody(body []byte) {
 
 // SetBodyString sets response body.
 func (resp *Response) SetBodyString(body string) {
-	resp.closeBodyStream(nil) //nolint:errcheck
+	resp.closeBodyStream() //nolint:errcheck
 	bodyBuf := resp.bodyBuffer()
 	bodyBuf.Reset()
 	bodyBuf.WriteString(body) //nolint:errcheck
@@ -679,7 +564,7 @@ func (resp *Response) SetBodyString(body string) {
 // ResetBody resets response body.
 func (resp *Response) ResetBody() {
 	resp.bodyRaw = nil
-	resp.closeBodyStream(nil) //nolint:errcheck
+	resp.closeBodyStream() //nolint:errcheck
 	if resp.body != nil {
 		if resp.keepBodyBuffer {
 			resp.body.Reset()
@@ -715,11 +600,8 @@ func (req *Request) SetBodyRaw(body []byte) {
 // The majority of workloads don't need this method.
 func (resp *Response) ReleaseBody(size int) {
 	resp.bodyRaw = nil
-	if resp.body == nil {
-		return
-	}
 	if cap(resp.body.B) > size {
-		resp.closeBodyStream(nil) //nolint:errcheck
+		resp.closeBodyStream() //nolint:errcheck
 		resp.body = nil
 	}
 }
@@ -733,9 +615,6 @@ func (resp *Response) ReleaseBody(size int) {
 // The majority of workloads don't need this method.
 func (req *Request) ReleaseBody(size int) {
 	req.bodyRaw = nil
-	if req.body == nil {
-		return
-	}
 	if cap(req.body.B) > size {
 		req.closeBodyStream() //nolint:errcheck
 		req.body = nil
@@ -753,7 +632,7 @@ func (resp *Response) SwapBody(body []byte) []byte {
 	if resp.bodyStream != nil {
 		bb.Reset()
 		_, err := copyZeroAlloc(bb, resp.bodyStream)
-		resp.closeBodyStream(err) //nolint:errcheck
+		resp.closeBodyStream() //nolint:errcheck
 		if err != nil {
 			bb.Reset()
 			bb.SetString(err.Error())
@@ -860,15 +739,14 @@ func (req *Request) ResetBody() {
 // CopyTo copies req contents to dst except of body stream.
 func (req *Request) CopyTo(dst *Request) {
 	req.copyToSkipBody(dst)
-	switch {
-	case req.bodyRaw != nil:
-		dst.bodyRaw = append(dst.bodyRaw[:0], req.bodyRaw...)
+	if req.bodyRaw != nil {
+		dst.bodyRaw = req.bodyRaw
 		if dst.body != nil {
 			dst.body.Reset()
 		}
-	case req.body != nil:
+	} else if req.body != nil {
 		dst.bodyBuffer().Set(req.body.B)
-	case dst.body != nil:
+	} else if dst.body != nil {
 		dst.body.Reset()
 	}
 }
@@ -885,6 +763,7 @@ func (req *Request) copyToSkipBody(dst *Request) {
 	dst.isTLS = req.isTLS
 
 	dst.UseHostHeader = req.UseHostHeader
+	dst.timeout = req.timeout
 
 	// do not copy multipartForm - it will be automatically
 	// re-created on the first call to MultipartForm.
@@ -893,15 +772,14 @@ func (req *Request) copyToSkipBody(dst *Request) {
 // CopyTo copies resp contents to dst except of body stream.
 func (resp *Response) CopyTo(dst *Response) {
 	resp.copyToSkipBody(dst)
-	switch {
-	case resp.bodyRaw != nil:
-		dst.bodyRaw = append(dst.bodyRaw, resp.bodyRaw...)
+	if resp.bodyRaw != nil {
+		dst.bodyRaw = resp.bodyRaw
 		if dst.body != nil {
 			dst.body.Reset()
 		}
-	case resp.body != nil:
+	} else if resp.body != nil {
 		dst.bodyBuffer().Set(resp.body.B)
-	case dst.body != nil:
+	} else if dst.body != nil {
 		dst.body.Reset()
 	}
 }
@@ -910,22 +788,17 @@ func (resp *Response) copyToSkipBody(dst *Response) {
 	dst.Reset()
 	resp.Header.CopyTo(&dst.Header)
 	dst.SkipBody = resp.SkipBody
-	dst.raddr = resp.raddr
-	dst.laddr = resp.laddr
+	dst.raddr = copyAddr(resp.raddr)
+	dst.laddr = copyAddr(resp.laddr)
+	dst.redirectsCount = resp.redirectsCount
+	dst.connID = resp.connID
+	dst.connRequestNum = resp.connRequestNum
 }
 
 func swapRequestBody(a, b *Request) {
 	a.body, b.body = b.body, a.body
 	a.bodyRaw, b.bodyRaw = b.bodyRaw, a.bodyRaw
 	a.bodyStream, b.bodyStream = b.bodyStream, a.bodyStream
-
-	// This code assumes that if a requestStream was swapped the headers are also swapped or copied.
-	if rs, ok := a.bodyStream.(*requestStream); ok {
-		rs.header = &a.Header
-	}
-	if rs, ok := b.bodyStream.(*requestStream); ok {
-		rs.header = &b.Header
-	}
 }
 
 func swapResponseBody(a, b *Response) {
@@ -934,19 +807,19 @@ func swapResponseBody(a, b *Response) {
 	a.bodyStream, b.bodyStream = b.bodyStream, a.bodyStream
 }
 
-// URI returns request URI.
+// URI returns request URI
 func (req *Request) URI() *URI {
 	req.parseURI() //nolint:errcheck
 	return &req.uri
 }
 
-// SetURI initializes request URI.
+// SetURI initializes request URI
 // Use this method if a single URI may be reused across multiple requests.
 // Otherwise, you can just use SetRequestURI() and it will be parsed as new URI.
 // The URI is copied and can be safely modified later.
-func (req *Request) SetURI(newURI *URI) {
-	if newURI != nil {
-		newURI.CopyTo(&req.uri)
+func (req *Request) SetURI(newUri *URI) {
+	if newUri != nil {
+		newUri.CopyTo(&req.uri)
 		req.parsedURI = true
 		return
 	}
@@ -983,9 +856,9 @@ func (req *Request) parsePostArgs() {
 
 // ErrNoMultipartForm means that the request's Content-Type
 // isn't 'multipart/form-data'.
-var ErrNoMultipartForm = errors.New("request Content-Type has bad boundary or is not multipart/form-data")
+var ErrNoMultipartForm = errors.New("request has no multipart/form-data Content-Type")
 
-// MultipartForm returns request's multipart form.
+// MultipartForm returns requests's multipart form.
 //
 // Returns ErrNoMultipartForm if request's Content-Type
 // isn't 'multipart/form-data'.
@@ -998,7 +871,7 @@ func (req *Request) MultipartForm() (*multipart.Form, error) {
 	}
 
 	req.multipartFormBoundary = string(req.Header.MultipartFormBoundary())
-	if req.multipartFormBoundary == "" {
+	if len(req.multipartFormBoundary) == 0 {
 		return nil, ErrNoMultipartForm
 	}
 
@@ -1054,8 +927,8 @@ func marshalMultipartForm(f *multipart.Form, boundary string) ([]byte, error) {
 func WriteMultipartForm(w io.Writer, f *multipart.Form, boundary string) error {
 	// Do not care about memory allocations here, since multipart
 	// form processing is slow.
-	if boundary == "" {
-		return errors.New("form boundary cannot be empty")
+	if len(boundary) == 0 {
+		panic("BUG: form boundary cannot be empty")
 	}
 
 	mw := multipart.NewWriter(w)
@@ -1081,10 +954,9 @@ func WriteMultipartForm(w io.Writer, f *multipart.Form, boundary string) error {
 			}
 			fh, err := fv.Open()
 			if err != nil {
-				return fmt.Errorf("cannot open form file %q (%q): %w", k, fv.Filename, err)
+				return fmt.Errorf("cannot open form file %q (%q): %s", k, fv.Filename, err)
 			}
 			if _, err = copyZeroAlloc(vw, fh); err != nil {
-				_ = fh.Close()
 				return fmt.Errorf("error when copying form file %q (%q): %w", k, fv.Filename, err)
 			}
 			if err = fh.Close(); err != nil {
@@ -1119,14 +991,10 @@ func readMultipartForm(r io.Reader, boundary string, size, maxInMemoryFileSize i
 
 // Reset clears request contents.
 func (req *Request) Reset() {
-	if requestBodyPoolSizeLimit >= 0 && req.body != nil {
-		req.ReleaseBody(requestBodyPoolSizeLimit)
-	}
 	req.Header.Reset()
 	req.resetSkipHeader()
 	req.timeout = 0
 	req.UseHostHeader = false
-	req.DisableRedirectPathNormalizing = false
 }
 
 func (req *Request) resetSkipHeader() {
@@ -1152,16 +1020,15 @@ func (req *Request) RemoveMultipartFormFiles() {
 
 // Reset clears response contents.
 func (resp *Response) Reset() {
-	if responseBodyPoolSizeLimit >= 0 && resp.body != nil {
-		resp.ReleaseBody(responseBodyPoolSizeLimit)
-	}
-	resp.resetSkipHeader()
 	resp.Header.Reset()
+	resp.resetSkipHeader()
 	resp.SkipBody = false
 	resp.raddr = nil
 	resp.laddr = nil
+	resp.connID = 0
+	resp.connRequestNum = 0
 	resp.ImmediateHeaderFlush = false
-	resp.StreamBody = false
+	resp.redirectsCount = 0
 }
 
 func (resp *Response) resetSkipHeader() {
@@ -1220,11 +1087,11 @@ func (req *Request) ReadLimitBody(r *bufio.Reader, maxBodySize int) error {
 	return req.readLimitBody(r, maxBodySize, false, true)
 }
 
-func (req *Request) readLimitBody(r *bufio.Reader, maxBodySize int, getOnly, preParseMultipartForm bool) error {
-	// Do not reset the request here - the caller must reset it before
+func (req *Request) readLimitBody(r *bufio.Reader, maxBodySize int, getOnly bool, preParseMultipartForm bool) error {
+	// Do not Reset the request here - the caller must Reset it before
 	// calling this method.
 
-	if getOnly && !req.Header.IsGet() && !req.Header.IsHead() {
+	if getOnly && !req.Header.IsGet() {
 		return ErrGetOnly
 	}
 
@@ -1238,11 +1105,11 @@ func (req *Request) readLimitBody(r *bufio.Reader, maxBodySize int, getOnly, pre
 	return req.ContinueReadBody(r, maxBodySize, preParseMultipartForm)
 }
 
-func (req *Request) readBodyStream(r *bufio.Reader, maxBodySize int, getOnly, preParseMultipartForm bool) error {
-	// Do not reset the request here - the caller must reset it before
+func (req *Request) readBodyStream(r *bufio.Reader, maxBodySize int, getOnly bool, preParseMultipartForm bool) error {
+	// Do not Reset the request here - the caller must Reset it before
 	// calling this method.
 
-	if getOnly && !req.Header.IsGet() && !req.Header.IsHead() {
+	if getOnly && !req.Header.IsGet() {
 		return ErrGetOnly
 	}
 
@@ -1290,7 +1157,7 @@ func (req *Request) ContinueReadBody(r *bufio.Reader, maxBodySize int, preParseM
 			// This way we limit memory usage for large file uploads, since their contents
 			// is streamed into temporary files if file size exceeds defaultMaxInMemoryFileSize.
 			req.multipartFormBoundary = string(req.Header.MultipartFormBoundary())
-			if req.multipartFormBoundary != "" && len(req.Header.peek(strContentEncoding)) == 0 {
+			if len(req.multipartFormBoundary) > 0 && len(req.Header.peek(strContentEncoding)) == 0 {
 				req.multipartForm, err = readMultipartForm(r, req.multipartFormBoundary, contentLength, defaultMaxInMemoryFileSize)
 				if err != nil {
 					req.Reset()
@@ -1316,7 +1183,7 @@ func (req *Request) ContinueReadBody(r *bufio.Reader, maxBodySize int, preParseM
 		return err
 	}
 
-	if contentLength == -1 {
+	if req.Header.ContentLength() == -1 {
 		err = req.Header.ReadTrailer(r)
 		if err != nil && err != io.EOF {
 			return err
@@ -1329,19 +1196,17 @@ func (req *Request) ContinueReadBody(r *bufio.Reader, maxBodySize int, preParseM
 //
 // If maxBodySize > 0 and the body size exceeds maxBodySize,
 // then ErrBodyTooLarge is returned.
-func (req *Request) ReadBody(r *bufio.Reader, contentLength, maxBodySize int) (err error) {
+func (req *Request) ReadBody(r *bufio.Reader, contentLength int, maxBodySize int) (err error) {
 	bodyBuf := req.bodyBuffer()
 	bodyBuf.Reset()
 
-	switch {
-	case contentLength >= 0:
+	if contentLength >= 0 {
 		bodyBuf.B, err = readBody(r, contentLength, maxBodySize, bodyBuf.B)
-	case contentLength == -1:
+
+	} else if contentLength == -1 {
 		bodyBuf.B, err = readBodyChunked(r, maxBodySize, bodyBuf.B)
-		if err == nil && len(bodyBuf.B) == 0 {
-			req.Header.SetContentLength(0)
-		}
-	default:
+
+	} else {
 		bodyBuf.B, err = readBodyIdentity(r, maxBodySize, bodyBuf.B)
 		req.Header.SetContentLength(len(bodyBuf.B))
 	}
@@ -1369,7 +1234,7 @@ func (req *Request) ContinueReadBodyStream(r *bufio.Reader, maxBodySize int, pre
 			// This way we limit memory usage for large file uploads, since their contents
 			// is streamed into temporary files if file size exceeds defaultMaxInMemoryFileSize.
 			req.multipartFormBoundary = b2s(req.Header.MultipartFormBoundary())
-			if req.multipartFormBoundary != "" && len(req.Header.peek(strContentEncoding)) == 0 {
+			if len(req.multipartFormBoundary) > 0 && len(req.Header.peek(strContentEncoding)) == 0 {
 				req.multipartForm, err = readMultipartForm(r, req.multipartFormBoundary, contentLength, defaultMaxInMemoryFileSize)
 				if err != nil {
 					req.Reset()
@@ -1384,11 +1249,7 @@ func (req *Request) ContinueReadBodyStream(r *bufio.Reader, maxBodySize int, pre
 		// the end of body is determined by connection close.
 		// So just ignore request body for requests without
 		// 'Content-Length' and 'Transfer-Encoding' headers.
-
-		// refer to https://tools.ietf.org/html/rfc7230#section-3.3.2
-		if !req.Header.ignoreBody() {
-			req.Header.SetContentLength(0)
-		}
+		req.Header.SetContentLength(0)
 		return nil
 	}
 
@@ -1453,8 +1314,7 @@ func (resp *Response) ReadLimitBody(r *bufio.Reader, maxBodySize int) error {
 		}
 	}
 
-	// A response without a body can't have trailers.
-	if resp.Header.ContentLength() == -1 && !resp.StreamBody && !resp.mustSkipBody() {
+	if resp.Header.ContentLength() == -1 {
 		err = resp.Header.ReadTrailer(r)
 		if err != nil && err != io.EOF {
 			return err
@@ -1472,25 +1332,15 @@ func (resp *Response) ReadBody(r *bufio.Reader, maxBodySize int) (err error) {
 	bodyBuf.Reset()
 
 	contentLength := resp.Header.ContentLength()
-	switch {
-	case contentLength >= 0:
+	if contentLength >= 0 {
 		bodyBuf.B, err = readBody(r, contentLength, maxBodySize, bodyBuf.B)
-		if err == ErrBodyTooLarge && resp.StreamBody {
-			resp.bodyStream = acquireRequestStream(bodyBuf, r, &resp.Header)
-			err = nil
-		}
-	case contentLength == -1:
-		if resp.StreamBody {
-			resp.bodyStream = acquireRequestStream(bodyBuf, r, &resp.Header)
-		} else {
-			bodyBuf.B, err = readBodyChunked(r, maxBodySize, bodyBuf.B)
-		}
-	default:
+
+	} else if contentLength == -1 {
+		bodyBuf.B, err = readBodyChunked(r, maxBodySize, bodyBuf.B)
+
+	} else {
 		bodyBuf.B, err = readBodyIdentity(r, maxBodySize, bodyBuf.B)
 		resp.Header.SetContentLength(len(bodyBuf.B))
-	}
-	if err == nil && resp.StreamBody && resp.bodyStream == nil {
-		resp.bodyStream = bytes.NewReader(bodyBuf.B)
 	}
 	return err
 }
@@ -1514,15 +1364,15 @@ func (resp *Response) WriteTo(w io.Writer) (int64, error) {
 func writeBufio(hw httpWriter, w io.Writer) (int64, error) {
 	sw := acquireStatsWriter(w)
 	bw := acquireBufioWriter(sw)
-	errw := hw.Write(bw)
-	errf := bw.Flush()
+	err1 := hw.Write(bw)
+	err2 := bw.Flush()
 	releaseBufioWriter(bw)
 	n := sw.bytesWritten
 	releaseStatsWriter(sw)
 
-	err := errw
+	err := err1
 	if err == nil {
-		err = errf
+		err = err2
 	}
 	return n, err
 }
@@ -1590,8 +1440,9 @@ func (req *Request) Write(w *bufio.Writer) error {
 		if len(req.Header.Host()) == 0 {
 			if len(host) == 0 {
 				return errRequestHostRequired
+			} else {
+				req.Header.SetHostBytes(host)
 			}
-			req.Header.SetHostBytes(host)
 		} else if !req.UseHostHeader {
 			req.Header.SetHostBytes(host)
 		}
@@ -1604,10 +1455,10 @@ func (req *Request) Write(w *bufio.Writer) error {
 			nl := len(uri.username) + len(uri.password) + 1
 			nb := nl + len(strBasicSpace)
 			tl := nb + base64.StdEncoding.EncodedLen(nl)
-			if tl > cap(req.Header.bufV) {
-				req.Header.bufV = make([]byte, 0, tl)
+			if tl > cap(req.Header.bufKV.value) {
+				req.Header.bufKV.value = make([]byte, 0, tl)
 			}
-			buf := req.Header.bufV[:0]
+			buf := req.Header.bufKV.value[:0]
 			buf = append(buf, uri.username...)
 			buf = append(buf, strColon...)
 			buf = append(buf, uri.password...)
@@ -1646,7 +1497,7 @@ func (req *Request) Write(w *bufio.Writer) error {
 		_, err = w.Write(body)
 	} else if len(body) > 0 {
 		if req.secureErrorLogMessage {
-			return errors.New("non-zero body for non-POST request")
+			return fmt.Errorf("non-zero body for non-POST request")
 		}
 		return fmt.Errorf("non-zero body for non-POST request. body=%q", body)
 	}
@@ -1678,7 +1529,9 @@ func (resp *Response) WriteGzip(w *bufio.Writer) error {
 //
 // WriteGzipLevel doesn't flush response to w for performance reasons.
 func (resp *Response) WriteGzipLevel(w *bufio.Writer, level int) error {
-	resp.gzipBody(level)
+	if err := resp.gzipBody(level); err != nil {
+		return err
+	}
 	return resp.Write(w)
 }
 
@@ -1707,20 +1560,22 @@ func (resp *Response) WriteDeflate(w *bufio.Writer) error {
 //
 // WriteDeflateLevel doesn't flush response to w for performance reasons.
 func (resp *Response) WriteDeflateLevel(w *bufio.Writer, level int) error {
-	resp.deflateBody(level)
+	if err := resp.deflateBody(level); err != nil {
+		return err
+	}
 	return resp.Write(w)
 }
 
-func (resp *Response) brotliBody(level int) {
-	if len(resp.Header.ContentEncoding()) > 0 {
+func (resp *Response) brotliBody(level int) error {
+	if len(resp.Header.peek(strContentEncoding)) > 0 {
 		// It looks like the body is already compressed.
 		// Do not compress it again.
-		return
+		return nil
 	}
 
 	if !resp.Header.isCompressibleContentType() {
 		// The content-type cannot be compressed.
-		return
+		return nil
 	}
 
 	if resp.bodyStream != nil {
@@ -1738,13 +1593,10 @@ func (resp *Response) brotliBody(level int) {
 				wf: zw,
 				bw: sw,
 			}
-			_, wErr := copyZeroAlloc(fw, bs)
+			copyZeroAlloc(fw, bs) //nolint:errcheck
 			releaseStacklessBrotliWriter(zw, level)
-			switch v := bs.(type) {
-			case io.Closer:
-				v.Close()
-			case ReadCloserWithError:
-				v.CloseWithError(wErr) //nolint:errcheck
+			if bsc, ok := bs.(io.Closer); ok {
+				bsc.Close()
 			}
 		})
 	} else {
@@ -1753,7 +1605,7 @@ func (resp *Response) brotliBody(level int) {
 			// There is no sense in spending CPU time on small body compression,
 			// since there is a very high probability that the compressed
 			// body size will be bigger than the original body size.
-			return
+			return nil
 		}
 		w := responseBodyPool.Get()
 		w.B = AppendBrotliBytesLevel(w.B, bodyBytes, level)
@@ -1765,20 +1617,20 @@ func (resp *Response) brotliBody(level int) {
 		resp.body = w
 		resp.bodyRaw = nil
 	}
-	resp.Header.SetContentEncodingBytes(strBr)
-	resp.Header.addVaryBytes(strAcceptEncoding)
+	resp.Header.SetCanonical(strContentEncoding, strBr)
+	return nil
 }
 
-func (resp *Response) gzipBody(level int) {
-	if len(resp.Header.ContentEncoding()) > 0 {
+func (resp *Response) gzipBody(level int) error {
+	if len(resp.Header.peek(strContentEncoding)) > 0 {
 		// It looks like the body is already compressed.
 		// Do not compress it again.
-		return
+		return nil
 	}
 
 	if !resp.Header.isCompressibleContentType() {
 		// The content-type cannot be compressed.
-		return
+		return nil
 	}
 
 	if resp.bodyStream != nil {
@@ -1796,13 +1648,10 @@ func (resp *Response) gzipBody(level int) {
 				wf: zw,
 				bw: sw,
 			}
-			_, wErr := copyZeroAlloc(fw, bs)
+			copyZeroAlloc(fw, bs) //nolint:errcheck
 			releaseStacklessGzipWriter(zw, level)
-			switch v := bs.(type) {
-			case io.Closer:
-				v.Close()
-			case ReadCloserWithError:
-				v.CloseWithError(wErr) //nolint:errcheck
+			if bsc, ok := bs.(io.Closer); ok {
+				bsc.Close()
 			}
 		})
 	} else {
@@ -1811,7 +1660,7 @@ func (resp *Response) gzipBody(level int) {
 			// There is no sense in spending CPU time on small body compression,
 			// since there is a very high probability that the compressed
 			// body size will be bigger than the original body size.
-			return
+			return nil
 		}
 		w := responseBodyPool.Get()
 		w.B = AppendGzipBytesLevel(w.B, bodyBytes, level)
@@ -1823,20 +1672,20 @@ func (resp *Response) gzipBody(level int) {
 		resp.body = w
 		resp.bodyRaw = nil
 	}
-	resp.Header.SetContentEncodingBytes(strGzip)
-	resp.Header.addVaryBytes(strAcceptEncoding)
+	resp.Header.SetCanonical(strContentEncoding, strGzip)
+	return nil
 }
 
-func (resp *Response) deflateBody(level int) {
-	if len(resp.Header.ContentEncoding()) > 0 {
+func (resp *Response) deflateBody(level int) error {
+	if len(resp.Header.peek(strContentEncoding)) > 0 {
 		// It looks like the body is already compressed.
 		// Do not compress it again.
-		return
+		return nil
 	}
 
 	if !resp.Header.isCompressibleContentType() {
 		// The content-type cannot be compressed.
-		return
+		return nil
 	}
 
 	if resp.bodyStream != nil {
@@ -1854,13 +1703,10 @@ func (resp *Response) deflateBody(level int) {
 				wf: zw,
 				bw: sw,
 			}
-			_, wErr := copyZeroAlloc(fw, bs)
+			copyZeroAlloc(fw, bs) //nolint:errcheck
 			releaseStacklessDeflateWriter(zw, level)
-			switch v := bs.(type) {
-			case io.Closer:
-				v.Close()
-			case ReadCloserWithError:
-				v.CloseWithError(wErr) //nolint:errcheck
+			if bsc, ok := bs.(io.Closer); ok {
+				bsc.Close()
 			}
 		})
 	} else {
@@ -1869,7 +1715,7 @@ func (resp *Response) deflateBody(level int) {
 			// There is no sense in spending CPU time on small body compression,
 			// since there is a very high probability that the compressed
 			// body size will be bigger than the original body size.
-			return
+			return nil
 		}
 		w := responseBodyPool.Get()
 		w.B = AppendDeflateBytesLevel(w.B, bodyBytes, level)
@@ -1881,62 +1727,11 @@ func (resp *Response) deflateBody(level int) {
 		resp.body = w
 		resp.bodyRaw = nil
 	}
-	resp.Header.SetContentEncodingBytes(strDeflate)
-	resp.Header.addVaryBytes(strAcceptEncoding)
+	resp.Header.SetCanonical(strContentEncoding, strDeflate)
+	return nil
 }
 
-func (resp *Response) zstdBody(level int) {
-	if len(resp.Header.ContentEncoding()) > 0 {
-		return
-	}
-
-	if !resp.Header.isCompressibleContentType() {
-		return
-	}
-
-	if resp.bodyStream != nil {
-		// Reset Content-Length to -1, since it is impossible
-		// to determine body size beforehand of streamed compression.
-		// For
-		resp.Header.SetContentLength(-1)
-
-		// Do not care about memory allocations here, since flate is slow
-		// and allocates a lot of memory by itself.
-		bs := resp.bodyStream
-		resp.bodyStream = NewStreamReader(func(sw *bufio.Writer) {
-			zw := acquireStacklessZstdWriter(sw, level)
-			fw := &flushWriter{
-				wf: zw,
-				bw: sw,
-			}
-			_, wErr := copyZeroAlloc(fw, bs)
-			releaseStacklessZstdWriter(zw, level)
-			switch v := bs.(type) {
-			case io.Closer:
-				v.Close()
-			case ReadCloserWithError:
-				v.CloseWithError(wErr) //nolint:errcheck
-			}
-		})
-	} else {
-		bodyBytes := resp.bodyBytes()
-		if len(bodyBytes) < minCompressLen {
-			return
-		}
-		w := responseBodyPool.Get()
-		w.B = AppendZstdBytesLevel(w.B, bodyBytes, level)
-
-		if resp.body != nil {
-			responseBodyPool.Put(resp.body)
-		}
-		resp.body = w
-		resp.bodyRaw = nil
-	}
-	resp.Header.SetContentEncodingBytes(strZstd)
-	resp.Header.addVaryBytes(strAcceptEncoding)
-}
-
-// Bodies with sizes smaller than minCompressLen aren't compressed at all.
+// Bodies with sizes smaller than minCompressLen aren't compressed at all
 const minCompressLen = 200
 
 type writeFlusher interface {
@@ -2021,9 +1816,9 @@ func (req *Request) writeBodyStream(w *bufio.Writer) error {
 			err = req.Header.writeTrailer(w)
 		}
 	}
-	errc := req.closeBodyStream()
+	err1 := req.closeBodyStream()
 	if err == nil {
-		err = errc
+		err = err1
 	}
 	return err
 }
@@ -2078,9 +1873,9 @@ func (resp *Response) writeBodyStream(w *bufio.Writer, sendBody bool) (err error
 			}
 		}
 	}
-	errc := resp.closeBodyStream(err)
+	err1 := resp.closeBodyStream()
 	if err == nil {
-		err = errc
+		err = err1
 	}
 	return err
 }
@@ -2093,26 +1888,17 @@ func (req *Request) closeBodyStream() error {
 	if bsc, ok := req.bodyStream.(io.Closer); ok {
 		err = bsc.Close()
 	}
-	if rs, ok := req.bodyStream.(*requestStream); ok {
-		releaseRequestStream(rs)
-	}
 	req.bodyStream = nil
 	return err
 }
 
-func (resp *Response) closeBodyStream(wErr error) error {
+func (resp *Response) closeBodyStream() error {
 	if resp.bodyStream == nil {
 		return nil
 	}
 	var err error
 	if bsc, ok := resp.bodyStream.(io.Closer); ok {
 		err = bsc.Close()
-	}
-	if bsc, ok := resp.bodyStream.(ReadCloserWithError); ok {
-		err = bsc.CloseWithError(wErr)
-	}
-	if bsr, ok := resp.bodyStream.(*requestStream); ok {
-		releaseRequestStream(bsr)
 	}
 	resp.bodyStream = nil
 	return err
@@ -2138,8 +1924,6 @@ func (resp *Response) String() string {
 
 func getHTTPString(hw httpWriter) string {
 	w := bytebufferpool.Get()
-	defer bytebufferpool.Put(w)
-
 	bw := bufio.NewWriter(w)
 	if err := hw.Write(bw); err != nil {
 		return err.Error()
@@ -2148,6 +1932,7 @@ func getHTTPString(hw httpWriter) string {
 		return err.Error()
 	}
 	s := string(w.B)
+	bytebufferpool.Put(w)
 	return s
 }
 
@@ -2165,7 +1950,7 @@ func writeBodyChunked(w *bufio.Writer, r io.Reader) error {
 		n, err = r.Read(buf)
 		if n == 0 {
 			if err == nil {
-				continue
+				panic("BUG: io.Reader returned 0, nil")
 			}
 			if err == io.EOF {
 				if err = writeChunk(w, buf[:0]); err != nil {
@@ -2194,19 +1979,10 @@ func limitedReaderSize(r io.Reader) int64 {
 
 func writeBodyFixedSize(w *bufio.Writer, r io.Reader, size int64) error {
 	if size > maxSmallFileSize {
-		earlyFlush := false
-		switch r := r.(type) {
-		case *os.File:
-			earlyFlush = true
-		case *io.LimitedReader:
-			_, earlyFlush = r.R.(*os.File)
-		}
-		if earlyFlush {
-			// w buffer must be empty for triggering
-			// sendfile path in bufio.Writer.ReadFrom.
-			if err := w.Flush(); err != nil {
-				return err
-			}
+		// w buffer must be empty for triggering
+		// sendfile path in bufio.Writer.ReadFrom.
+		if err := w.Flush(); err != nil {
+			return err
 		}
 	}
 
@@ -2218,111 +1994,16 @@ func writeBodyFixedSize(w *bufio.Writer, r io.Reader, size int64) error {
 	return err
 }
 
-// copyZeroAlloc optimizes io.Copy by calling ReadFrom or WriteTo only when
-// copying between os.File and net.TCPConn. If the reader has a WriteTo
-// method, it uses WriteTo for copying; if the writer has a ReadFrom method,
-// it uses ReadFrom for copying. If neither method is available, it gets a
-// buffer from sync.Pool to perform the copy.
-//
-// io.CopyBuffer always uses the WriterTo or ReadFrom interface if it's
-// available. however, os.File and net.TCPConn unfortunately have a
-// fallback in their WriterTo that calls io.Copy if sendfile isn't possible.
-//
-// See issue: https://github.com/valyala/fasthttp/issues/1889
-//
-// sendfile can only be triggered when copying between os.File and net.TCPConn.
-// Since the function confirming zero-copy is a private function, we use
-// ReadFrom only in this specific scenario. For all other cases, we prioritize
-// using our own copyBuffer method.
-//
-// o: our copyBuffer
-// r: readFrom
-// w: writeTo
-//
-// write\read *File  *TCPConn  writeTo  other
-// *File        o       r         w       o
-// *TCPConn    w,r      o         w       o
-// readFrom     r       r         w       r
-// other        o       o         w       o
-//
-//nolint:dupword
 func copyZeroAlloc(w io.Writer, r io.Reader) (int64, error) {
-	var readerIsFile, readerIsConn bool
-
-	switch r := r.(type) {
-	case *os.File:
-		readerIsFile = true
-	case *net.TCPConn:
-		readerIsConn = true
-	case io.WriterTo:
-		return r.WriteTo(w)
-	}
-
-	switch w := w.(type) {
-	case *os.File:
-		if readerIsConn {
-			return w.ReadFrom(r)
-		}
-	case *net.TCPConn:
-		if readerIsFile {
-			// net.WriteTo requires go1.22 or later
-			// Benchmark tests show that on Windows, WriteTo performs
-			// significantly better than ReadFrom. On Linux, however,
-			// ReadFrom slightly outperforms WriteTo. When possible,
-			// copyZeroAlloc aims to perform  better than or as well
-			// as io.Copy, so we use WriteTo whenever possible for
-			// optimal performance.
-			if rt, ok := r.(io.WriterTo); ok {
-				return rt.WriteTo(w)
-			}
-			return w.ReadFrom(r)
-		}
-	case io.ReaderFrom:
-		return w.ReadFrom(r)
-	}
-
 	vbuf := copyBufPool.Get()
 	buf := vbuf.([]byte)
-	n, err := copyBuffer(w, r, buf)
+	n, err := io.CopyBuffer(w, r, buf)
 	copyBufPool.Put(vbuf)
 	return n, err
 }
 
-// copyBuffer is rewritten from io.copyBuffer. We do not check if src has a
-// WriteTo method, if dst has a ReadFrom method, or if buf is empty.
-func copyBuffer(dst io.Writer, src io.Reader, buf []byte) (written int64, err error) {
-	for {
-		nr, er := src.Read(buf)
-		if nr > 0 {
-			nw, ew := dst.Write(buf[0:nr])
-			if nw < 0 || nr < nw {
-				nw = 0
-				if ew == nil {
-					ew = errors.New("invalid write result")
-				}
-			}
-			written += int64(nw)
-			if ew != nil {
-				err = ew
-				break
-			}
-			if nr != nw {
-				err = io.ErrShortWrite
-				break
-			}
-		}
-		if er != nil {
-			if er != io.EOF {
-				err = er
-			}
-			break
-		}
-	}
-	return written, err
-}
-
 var copyBufPool = sync.Pool{
-	New: func() any {
+	New: func() interface{} {
 		return make([]byte, 4096)
 	},
 }
@@ -2351,7 +2032,7 @@ func writeChunk(w *bufio.Writer, b []byte) error {
 // the given limit.
 var ErrBodyTooLarge = errors.New("body size exceeds the given limit")
 
-func readBody(r *bufio.Reader, contentLength, maxBodySize int, dst []byte) ([]byte, error) {
+func readBody(r *bufio.Reader, contentLength int, maxBodySize int, dst []byte) ([]byte, error) {
 	if maxBodySize > 0 && contentLength > maxBodySize {
 		return dst, ErrBodyTooLarge
 	}
@@ -2360,7 +2041,7 @@ func readBody(r *bufio.Reader, contentLength, maxBodySize int, dst []byte) ([]by
 
 var errChunkedStream = errors.New("chunked stream")
 
-func readBodyWithStreaming(r *bufio.Reader, contentLength, maxBodySize int, dst []byte) (b []byte, err error) {
+func readBodyWithStreaming(r *bufio.Reader, contentLength int, maxBodySize int, dst []byte) (b []byte, err error) {
 	if contentLength == -1 {
 		// handled in requestStream.Read()
 		return b, errChunkedStream
@@ -2376,13 +2057,12 @@ func readBodyWithStreaming(r *bufio.Reader, contentLength, maxBodySize int, dst 
 		readN = 8 * 1024
 	}
 
-	// A fixed-length pre-read function should be used here; otherwise,
-	// it may read content beyond the request body into areas outside
-	// the br buffer. This could affect the handling of the next request
-	// in the br buffer, if there is one. The original two branches can
-	// be handled with this single branch. by the way,
-	// fix issue: https://github.com/valyala/fasthttp/issues/1816
-	b, err = appendBodyFixedSize(r, dst, readN)
+	if contentLength >= 0 && maxBodySize >= contentLength {
+		b, err = appendBodyFixedSize(r, dst, readN)
+	} else {
+		b, err = readBodyIdentity(r, readN, dst)
+	}
+
 	if err != nil {
 		return b, err
 	}
@@ -2401,21 +2081,20 @@ func readBodyIdentity(r *bufio.Reader, maxBodySize int, dst []byte) ([]byte, err
 	for {
 		nn, err := r.Read(dst[offset:])
 		if nn <= 0 {
-			switch {
-			case errors.Is(err, io.EOF):
-				return dst[:offset], nil
-			case err != nil:
+			if err != nil {
+				if err == io.EOF {
+					return dst[:offset], nil
+				}
 				return dst[:offset], err
-			default:
-				return dst[:offset], fmt.Errorf("bufio.Read() returned (%d, nil)", nn)
 			}
+			panic(fmt.Sprintf("BUG: bufio.Read() returned (%d, nil)", nn))
 		}
 		offset += nn
 		if maxBodySize > 0 && offset > maxBodySize {
 			return dst[:offset], ErrBodyTooLarge
 		}
 		if len(dst) == offset {
-			n := roundUpForSliceCap(2 * offset)
+			n := round2(2 * offset)
 			if maxBodySize > 0 && n > maxBodySize {
 				n = maxBodySize + 1
 			}
@@ -2434,7 +2113,7 @@ func appendBodyFixedSize(r *bufio.Reader, dst []byte, n int) ([]byte, error) {
 	offset := len(dst)
 	dstLen := offset + n
 	if cap(dst) < dstLen {
-		b := make([]byte, roundUpForSliceCap(dstLen))
+		b := make([]byte, round2(dstLen))
 		copy(b, dst)
 		dst = b
 	}
@@ -2443,14 +2122,13 @@ func appendBodyFixedSize(r *bufio.Reader, dst []byte, n int) ([]byte, error) {
 	for {
 		nn, err := r.Read(dst[offset:])
 		if nn <= 0 {
-			switch {
-			case errors.Is(err, io.EOF):
-				return dst[:offset], io.ErrUnexpectedEOF
-			case err != nil:
+			if err != nil {
+				if err == io.EOF {
+					err = io.ErrUnexpectedEOF
+				}
 				return dst[:offset], err
-			default:
-				return dst[:offset], fmt.Errorf("bufio.Read() returned (%d, nil)", nn)
 			}
+			panic(fmt.Sprintf("BUG: bufio.Read() returned (%d, nil)", nn))
 		}
 		offset += nn
 		if offset == dstLen {
@@ -2466,8 +2144,6 @@ type ErrBrokenChunk struct {
 
 func readBodyChunked(r *bufio.Reader, maxBodySize int, dst []byte) ([]byte, error) {
 	if len(dst) > 0 {
-		// data integrity might be in danger. No idea what we received,
-		// but nothing we should write to.
 		panic("BUG: expected zero-length buffer")
 	}
 
@@ -2489,7 +2165,7 @@ func readBodyChunked(r *bufio.Reader, maxBodySize int, dst []byte) ([]byte, erro
 		}
 		if !bytes.Equal(dst[len(dst)-strCRLFLen:], strCRLF) {
 			return dst, ErrBrokenChunk{
-				error: errors.New("cannot find crlf at the end of chunk"),
+				error: fmt.Errorf("cannot find crlf at the end of chunk"),
 			}
 		}
 		dst = dst[:len(dst)-strCRLFLen]
@@ -2505,24 +2181,17 @@ func parseChunkSize(r *bufio.Reader) (int, error) {
 		c, err := r.ReadByte()
 		if err != nil {
 			return -1, ErrBrokenChunk{
-				error: fmt.Errorf("cannot read '\\r' char at the end of chunk size: %w", err),
+				error: fmt.Errorf("cannot read '\r' char at the end of chunk size: %s", err),
 			}
 		}
 		// Skip chunk extension after chunk size.
 		// Add support later if anyone needs it.
 		if c != '\r' {
-			// Security: Don't allow newlines in chunk extensions.
-			// This can lead to request smuggling issues with some reverse proxies.
-			if c == '\n' {
-				return -1, ErrBrokenChunk{
-					error: errors.New("invalid character '\\n' after chunk size"),
-				}
-			}
 			continue
 		}
 		if err := r.UnreadByte(); err != nil {
 			return -1, ErrBrokenChunk{
-				error: fmt.Errorf("cannot unread '\\r' char at the end of chunk size: %w", err),
+				error: fmt.Errorf("cannot unread '\r' char at the end of chunk size: %w", err),
 			}
 		}
 		break
@@ -2551,16 +2220,18 @@ func readCrLf(r *bufio.Reader) error {
 	return nil
 }
 
-// SetTimeout sets timeout for the request.
-//
-// The following code:
-//
-//	req.SetTimeout(t)
-//	c.Do(&req, &resp)
-//
-// is equivalent to
-//
-//	c.DoTimeout(&req, &resp, t)
-func (req *Request) SetTimeout(t time.Duration) {
-	req.timeout = t
+func round2(n int) int {
+	if n <= 0 {
+		return 0
+	}
+
+	x := uint64(n - 1)
+	x |= x >> 1
+	x |= x >> 2
+	x |= x >> 4
+	x |= x >> 8
+	x |= x >> 16
+	x |= x >> 32
+
+	return int(x + 1)
 }

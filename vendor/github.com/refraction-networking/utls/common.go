@@ -853,6 +853,14 @@ type Config struct {
 	//
 	// If GREASE ECH extension is present, this field will be ignored.
 	ECHConfigs []ECHConfig // [uTLS]
+
+	// ClientHelloCustomExtToStore contains a list of custom extensions of ClientHello messages
+	// whose values should be stored in the connection.
+	ClientHelloCustomExtToStore map[uint16]struct{}
+
+	// ClientHelloCustomExtToStore contains a list of custom extensions of ClientHello messages
+	// that should be removed
+	ClientHelloCustomExtToDelete map[uint16]struct{}
 }
 
 const (

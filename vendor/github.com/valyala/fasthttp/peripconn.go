@@ -1,81 +1,68 @@
 package fasthttp
 
 import (
-	"crypto/tls"
+	"fmt"
 	"net"
 	"sync"
 )
 
+type ipv6t [16]byte
+
 type perIPConnCounter struct {
-	perIPConnPool    sync.Pool
-	perIPTLSConnPool sync.Pool
-	m                map[uint32]int
-	lock             sync.Mutex
+	pool sync.Pool
+	lock sync.Mutex
+	m    map[ipv6t]int
 }
 
-func (cc *perIPConnCounter) Register(ip uint32) int {
+func (cc *perIPConnCounter) Register(ip net.IP) int {
+	ipv6 := ip.To16()
+	if nil == ipv6 {
+		return 0
+	}
+
 	cc.lock.Lock()
 	if cc.m == nil {
-		cc.m = make(map[uint32]int)
+		cc.m = make(map[ipv6t]int)
 	}
-	n := cc.m[ip] + 1
-	cc.m[ip] = n
+	n := cc.m[ipv6t(ipv6)] + 1
+	cc.m[ipv6t(ipv6)] = n
 	cc.lock.Unlock()
 	return n
 }
 
-func (cc *perIPConnCounter) Unregister(ip uint32) {
+func (cc *perIPConnCounter) Unregister(ip net.IP) {
+
+	ipv6 := ip.To16()
+	if nil == ipv6 {
+		return
+	}
+
 	cc.lock.Lock()
-	defer cc.lock.Unlock()
 	if cc.m == nil {
-		// developer safeguard
+		cc.lock.Unlock()
 		panic("BUG: perIPConnCounter.Register() wasn't called")
 	}
-	n := cc.m[ip] - 1
+	n := cc.m[ipv6t(ipv6)] - 1
 	if n < 0 {
-		n = 0
+		cc.lock.Unlock()
+		panic(fmt.Sprintf("BUG: negative per-ip counter=%d for ip=%s", n, ip))
 	}
-	cc.m[ip] = n
+	cc.m[ipv6t(ipv6)] = n
+	cc.lock.Unlock()
 }
 
 type perIPConn struct {
 	net.Conn
 
+	ip               net.IP
 	perIPConnCounter *perIPConnCounter
-
-	ip uint32
 }
 
-type perIPTLSConn struct {
-	*tls.Conn
-
-	perIPConnCounter *perIPConnCounter
-
-	ip uint32
-}
-
-func acquirePerIPConn(conn net.Conn, ip uint32, counter *perIPConnCounter) net.Conn {
-	if tlsConn, ok := conn.(*tls.Conn); ok {
-		v := counter.perIPTLSConnPool.Get()
-		if v == nil {
-			return &perIPTLSConn{
-				perIPConnCounter: counter,
-				Conn:             tlsConn,
-				ip:               ip,
-			}
-		}
-		c := v.(*perIPTLSConn)
-		c.Conn = tlsConn
-		c.ip = ip
-		return c
-	}
-
-	v := counter.perIPConnPool.Get()
+func acquirePerIPConn(conn net.Conn, ip net.IP, counter *perIPConnCounter) *perIPConn {
+	v := counter.pool.Get()
 	if v == nil {
-		return &perIPConn{
+		v = &perIPConn{
 			perIPConnCounter: counter,
-			Conn:             conn,
-			ip:               ip,
 		}
 	}
 	c := v.(*perIPConn)
@@ -84,33 +71,25 @@ func acquirePerIPConn(conn net.Conn, ip uint32, counter *perIPConnCounter) net.C
 	return c
 }
 
+func releasePerIPConn(c *perIPConn) {
+	c.Conn = nil
+	c.perIPConnCounter.pool.Put(c)
+}
+
 func (c *perIPConn) Close() error {
 	err := c.Conn.Close()
 	c.perIPConnCounter.Unregister(c.ip)
-	c.Conn = nil
-	c.perIPConnCounter.perIPConnPool.Put(c)
+	releasePerIPConn(c)
 	return err
 }
 
-func (c *perIPTLSConn) Close() error {
-	err := c.Conn.Close()
-	c.perIPConnCounter.Unregister(c.ip)
-	c.Conn = nil
-	c.perIPConnCounter.perIPTLSConnPool.Put(c)
-	return err
-}
-
-func getUint32IP(c net.Conn) uint32 {
-	return ip2uint32(getConnIP4(c))
-}
-
-func getConnIP4(c net.Conn) net.IP {
+func getConnIP6(c net.Conn) net.IP {
 	addr := c.RemoteAddr()
 	ipAddr, ok := addr.(*net.TCPAddr)
 	if !ok {
 		return net.IPv4zero
 	}
-	return ipAddr.IP.To4()
+	return ipAddr.IP.To16()
 }
 
 func ip2uint32(ip net.IP) uint32 {
@@ -127,4 +106,20 @@ func uint322ip(ip uint32) net.IP {
 	b[2] = byte(ip >> 8)
 	b[3] = byte(ip)
 	return b
+}
+
+func copyAddr(src net.Addr) net.Addr {
+
+	if tcpaddr, ok := src.(*net.TCPAddr); ok {
+		dst := *tcpaddr
+		return &dst
+	}
+
+	if tcpaddr, ok := src.(*net.UDPAddr); ok {
+		dst := *tcpaddr
+		return &dst
+	}
+
+	return src
+
 }

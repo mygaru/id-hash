@@ -12,7 +12,7 @@ func ProcessPimBatch(request pim.MsisdnRequest, resp pim.GpsiRequest) (pim.GpsiR
 	// Example implementation, where we map each phone to a hash of itself
 
 	err := request.Iterate(func(phone, token []byte) error {
-		h := strconv.FormatUint(xxhash.Sum64(phone), 64)
+		h := strconv.FormatUint(xxhash.Sum64(phone), 10)
 		resp.AddRow([]byte(h), token)
 		return nil
 	})

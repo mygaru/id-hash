@@ -1,12 +1,15 @@
 package pim
 
 import (
+	"flag"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fastjson"
 	"time"
 )
+
+var cloudURI = flag.String("cloudURI", "", "")
 
 // UidmapRequest - requests from Uidmap to Cloud
 type UidmapRequest []byte
@@ -60,7 +63,7 @@ func SendUidampRequest(r UidmapRequest, cloudUri string, timeout time.Duration) 
 		fasthttp.ReleaseRequest(req)
 	}()
 
-	req.SetRequestURI(cloudUri)
+	req.SetRequestURI(cloudUri + "/pim")
 	req.Header.SetMethod(fasthttp.MethodPost)
 	req.Header.SetContentType("application/json")
 	req.SetBody(r)
@@ -71,8 +74,28 @@ func SendUidampRequest(r UidmapRequest, cloudUri string, timeout time.Duration) 
 	}
 
 	if resp.StatusCode() != fasthttp.StatusNoContent {
-		return fmt.Errorf("error sending request to Cloud, err: %s, got = %d (wanted 204)", err, resp.StatusCode())
+		return fmt.Errorf("error sending request to Cloud (%s), got %d (wanted 204): %s", req.URI().String(), resp.StatusCode(), resp.Body())
 	}
 
 	return nil
+}
+
+func (r *UidmapRequest) GetIDs() (telcoID, partnerID, pimReqID uuid.UUID, err error) {
+	r.Form()
+	telcoID, err = uuid.Parse(fastjson.GetString(*r, "telco_id"))
+	if err != nil {
+		return
+	}
+
+	partnerID, err = uuid.Parse(fastjson.GetString(*r, "partner_id"))
+	if err != nil {
+		return
+	}
+
+	pimReqID, err = uuid.Parse(fastjson.GetString(*r, "pim_id"))
+	if err != nil {
+		return
+	}
+
+	return
 }

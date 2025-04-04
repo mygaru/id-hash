@@ -121,6 +121,8 @@ type Conn struct {
 	activeCall atomic.Int32
 
 	tmp [16]byte
+
+	clientHelloCustomExtData map[uint16][]byte
 }
 
 // Access to net.Conn methods.
@@ -162,6 +164,10 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 // TLS session.
 func (c *Conn) NetConn() net.Conn {
 	return c.conn
+}
+
+func (c *Conn) GetClientHelloCustomExtData(id uint16) []byte {
+	return c.clientHelloCustomExtData[id]
 }
 
 // A halfConn represents one direction of the record layer
@@ -1106,7 +1112,10 @@ func (c *Conn) unmarshalHandshakeMessage(data []byte, transcript transcriptHash)
 	case typeHelloRequest:
 		m = new(helloRequestMsg)
 	case typeClientHello:
-		m = new(clientHelloMsg)
+		m = &clientHelloMsg{
+			customExtToStore:  c.config.ClientHelloCustomExtToStore,
+			customExtToDelete: c.config.ClientHelloCustomExtToDelete,
+		}
 	case typeServerHello:
 		m = new(serverHelloMsg)
 	case typeNewSessionTicket:

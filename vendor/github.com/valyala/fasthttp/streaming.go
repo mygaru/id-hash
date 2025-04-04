@@ -9,13 +9,8 @@ import (
 	"github.com/valyala/bytebufferpool"
 )
 
-type headerInterface interface {
-	ContentLength() int
-	ReadTrailer(r *bufio.Reader) error
-}
-
 type requestStream struct {
-	header          headerInterface
+	header          *RequestHeader
 	prefetchedBytes *bytes.Reader
 	reader          *bufio.Reader
 	totalBytesRead  int
@@ -27,7 +22,7 @@ func (rs *requestStream) Read(p []byte) (int, error) {
 		n   int
 		err error
 	)
-	if rs.header.ContentLength() == -1 {
+	if rs.header.contentLength == -1 {
 		if rs.chunkLeft == 0 {
 			chunkSize, err := parseChunkSize(rs.reader)
 			if err != nil {
@@ -57,7 +52,7 @@ func (rs *requestStream) Read(p []byte) (int, error) {
 		}
 		return n, err
 	}
-	if rs.totalBytesRead == rs.header.ContentLength() {
+	if rs.totalBytesRead == rs.header.contentLength {
 		return 0, io.EOF
 	}
 	prefetchedSize := int(rs.prefetchedBytes.Size())
@@ -68,28 +63,29 @@ func (rs *requestStream) Read(p []byte) (int, error) {
 		}
 		n, err := rs.prefetchedBytes.Read(p)
 		rs.totalBytesRead += n
-		if n == rs.header.ContentLength() {
+		if n == rs.header.contentLength {
 			return n, io.EOF
 		}
 		return n, err
-	}
-	left := rs.header.ContentLength() - rs.totalBytesRead
-	if len(p) > left {
-		p = p[:left]
-	}
-	n, err = rs.reader.Read(p)
-	rs.totalBytesRead += n
-	if err != nil {
-		return n, err
+	} else {
+		left := rs.header.contentLength - rs.totalBytesRead
+		if len(p) > left {
+			p = p[:left]
+		}
+		n, err = rs.reader.Read(p)
+		rs.totalBytesRead += n
+		if err != nil {
+			return n, err
+		}
 	}
 
-	if rs.totalBytesRead == rs.header.ContentLength() {
+	if rs.totalBytesRead == rs.header.contentLength {
 		err = io.EOF
 	}
 	return n, err
 }
 
-func acquireRequestStream(b *bytebufferpool.ByteBuffer, r *bufio.Reader, h headerInterface) *requestStream {
+func acquireRequestStream(b *bytebufferpool.ByteBuffer, r *bufio.Reader, h *RequestHeader) *requestStream {
 	rs := requestStreamPool.Get().(*requestStream)
 	rs.prefetchedBytes = bytes.NewReader(b.B)
 	rs.reader = r
@@ -102,12 +98,11 @@ func releaseRequestStream(rs *requestStream) {
 	rs.totalBytesRead = 0
 	rs.chunkLeft = 0
 	rs.reader = nil
-	rs.header = nil
 	requestStreamPool.Put(rs)
 }
 
 var requestStreamPool = sync.Pool{
-	New: func() any {
+	New: func() interface{} {
 		return &requestStream{}
 	},
 }

@@ -6,11 +6,12 @@ import (
 	"github.com/mygaru/gpsi/cmd/gpsi/internal/core"
 	"github.com/mygaru/uidmap/pkg/pim"
 	"github.com/valyala/fasthttp"
+	"gitlab.adtelligent.com/common/shared/log"
 	"time"
 )
 
 var (
-	uidMapUri  = flag.String("uidMapUri", "http://localhost:8090", "Uidmap URI")
+	uidMapUri  = flag.String("uidMapUri", "http://localhost:8022", "Uidmap URI")
 	pimTimeout = flag.Duration("pimTimeout", 5*time.Minute, "Timeout for sending PIM batch to uidmap")
 )
 
@@ -43,6 +44,10 @@ func HandlerProcessMsisdnRequest(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	log.Infof("Got PIM batch, id=%s, telco=%s, partner=%s", pimReqID, telcoID, partnerID)
+
+	log.Debugf("%s", dcrBatch.Data)
+
 	gpsi2Uidmap := pim.NewGpsiRequest(telcoID, partnerID, pimReqID)
 	gpsi2Uidmap, err = core.ProcessPimBatch(dcrBatch, gpsi2Uidmap)
 	if err != nil {
@@ -50,6 +55,7 @@ func HandlerProcessMsisdnRequest(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	log.Debugf("%s", gpsi2Uidmap)
 	err = pim.SendGpsiRequest(gpsi2Uidmap, *uidMapUri, *pimTimeout)
 	if err != nil {
 		ctx.Error(fmt.Sprintf("failed to send PIM request: %v", err), fasthttp.StatusInternalServerError)

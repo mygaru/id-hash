@@ -3,11 +3,7 @@
 package fasthttpadaptor
 
 import (
-	"bufio"
-	"io"
-	"net"
 	"net/http"
-	"sync"
 
 	"github.com/valyala/fasthttp"
 )
@@ -19,11 +15,11 @@ import (
 // it has the following drawbacks comparing to using manually written fasthttp
 // request handler:
 //
-//   - A lot of useful functionality provided by fasthttp is missing
-//     from net/http handler.
-//   - net/http -> fasthttp handler conversion has some overhead,
-//     so the returned handler will be always slower than manually written
-//     fasthttp handler.
+//     * A lot of useful functionality provided by fasthttp is missing
+//       from net/http handler.
+//     * net/http -> fasthttp handler conversion has some overhead,
+//       so the returned handler will be always slower than manually written
+//       fasthttp handler.
 //
 // So it is advisable using this function only for quick net/http -> fasthttp
 // switching. Then manually convert net/http handlers to fasthttp handlers
@@ -39,11 +35,11 @@ func NewFastHTTPHandlerFunc(h http.HandlerFunc) fasthttp.RequestHandler {
 // it has the following drawbacks comparing to using manually written fasthttp
 // request handler:
 //
-//   - A lot of useful functionality provided by fasthttp is missing
-//     from net/http handler.
-//   - net/http -> fasthttp handler conversion has some overhead,
-//     so the returned handler will be always slower than manually written
-//     fasthttp handler.
+//     * A lot of useful functionality provided by fasthttp is missing
+//       from net/http handler.
+//     * net/http -> fasthttp handler conversion has some overhead,
+//       so the returned handler will be always slower than manually written
+//       fasthttp handler.
 //
 // So it is advisable using this function only for quick net/http -> fasthttp
 // switching. Then manually convert net/http handlers to fasthttp handlers
@@ -52,15 +48,13 @@ func NewFastHTTPHandler(h http.Handler) fasthttp.RequestHandler {
 	return func(ctx *fasthttp.RequestCtx) {
 		var r http.Request
 		if err := ConvertRequest(ctx, &r, true); err != nil {
-			ctx.Logger().Printf("cannot parse requestURI %q: %v", r.RequestURI, err)
+			ctx.Logger().Printf("cannot parse requestURI %q: %s", r.RequestURI, err)
 			ctx.Error("Internal Server Error", fasthttp.StatusInternalServerError)
 			return
 		}
-		w := netHTTPResponseWriter{
-			w:   ctx.Response.BodyWriter(),
-			ctx: ctx,
-		}
-		h.ServeHTTP(&w, r.WithContext(ctx))
+
+		var w netHTTPResponseWriter
+		h.ServeHTTP(&w, &r)
 
 		ctx.SetStatusCode(w.StatusCode())
 		haveContentType := false
@@ -78,20 +72,19 @@ func NewFastHTTPHandler(h http.Handler) fasthttp.RequestHandler {
 			// If the Header does not contain a Content-Type line, Write adds a Content-Type set
 			// to the result of passing the initial 512 bytes of written data to DetectContentType.
 			l := 512
-			b := ctx.Response.Body()
-			if len(b) < 512 {
-				l = len(b)
+			if len(w.body) < 512 {
+				l = len(w.body)
 			}
-			ctx.Response.Header.Set(fasthttp.HeaderContentType, http.DetectContentType(b[:l]))
+			ctx.Response.Header.Set(fasthttp.HeaderContentType, http.DetectContentType(w.body[:l]))
 		}
+		ctx.Write(w.body) //nolint:errcheck
 	}
 }
 
 type netHTTPResponseWriter struct {
-	w          io.Writer
-	h          http.Header
-	ctx        *fasthttp.RequestCtx
 	statusCode int
+	h          http.Header
+	body       []byte
 }
 
 func (w *netHTTPResponseWriter) StatusCode() int {
@@ -113,47 +106,6 @@ func (w *netHTTPResponseWriter) WriteHeader(statusCode int) {
 }
 
 func (w *netHTTPResponseWriter) Write(p []byte) (int, error) {
-	return w.w.Write(p)
-}
-
-func (w *netHTTPResponseWriter) Flush() {}
-
-type wrappedConn struct {
-	net.Conn
-
-	wg   sync.WaitGroup
-	once sync.Once
-}
-
-func (c *wrappedConn) Close() (err error) {
-	c.once.Do(func() {
-		err = c.Conn.Close()
-		c.wg.Done()
-	})
-	return
-}
-
-func (w *netHTTPResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	// Hijack assumes control of the connection, so we need to prevent fasthttp from closing it or
-	// doing anything else with it.
-	w.ctx.HijackSetNoResponse(true)
-
-	conn := &wrappedConn{Conn: w.ctx.Conn()}
-	conn.wg.Add(1)
-	w.ctx.Hijack(func(net.Conn) {
-		conn.wg.Wait()
-	})
-
-	bufW := bufio.NewWriter(conn)
-
-	// Write any unflushed body to the hijacked connection buffer.
-	unflushedBody := w.ctx.Response.Body()
-	if len(unflushedBody) > 0 {
-		if _, err := bufW.Write(unflushedBody); err != nil {
-			conn.Close()
-			return nil, nil, err
-		}
-	}
-
-	return conn, &bufio.ReadWriter{Reader: bufio.NewReader(conn), Writer: bufW}, nil
+	w.body = append(w.body, p...)
+	return len(p), nil
 }
