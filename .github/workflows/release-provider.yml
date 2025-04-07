@@ -72,11 +72,11 @@ jobs:
 
       - name: Replace TAG_NAME in argo-application-${{ needs.build.outputs.provider_name }}.yml
         run: |
-          sed -i 's/TAG_NAME/${{ github.ref_name }}/g' ./configs/mygaru-acct-catcher/argo-application-${{ needs.build.outputs.provider_name }}.yml
+          sed -i 's/TAG_NAME/${{ github.ref_name }}/g' ./configs/argo-application-${{ needs.build.outputs.provider_name }}.yml
 
       - name: Deploy using kubectl
         run: |
-          kubectl apply -f ./configs/mygaru-acct-catcher/argo-application-${{ needs.build.outputs.provider_name }}.yml
+          kubectl apply -f ./configs/argo-application-${{ needs.build.outputs.provider_name }}.yml
 
       - name: Healthcheck
         run: |
