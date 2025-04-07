@@ -1,4 +1,4 @@
-FROM golang:1.22 AS builder
+FROM golang:1.23.6 AS builder
 ARG ENV_NAME
 ARG APP_NAME=gpsi
 WORKDIR /usr/src/${APP_NAME}
