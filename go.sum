@@ -23,6 +23,8 @@ github.com/mygaru/uidmap v0.0.0-20250404091344-a86aa0f814dd h1:zKy2x0vLg3j7XBPSb
 github.com/mygaru/uidmap v0.0.0-20250404091344-a86aa0f814dd/go.mod h1:UhZgzuAvPzfqWpJO/N7RNFgrWPgCRzy1Dx6rgneQEEo=
 github.com/mygaru/uidmap v0.0.0-20250404091535-3f123bf941de h1:jIdKcal1sSrRPJ0mhau10cTXZcrvYeLn6oJHfrqBEJo=
 github.com/mygaru/uidmap v0.0.0-20250404091535-3f123bf941de/go.mod h1:UhZgzuAvPzfqWpJO/N7RNFgrWPgCRzy1Dx6rgneQEEo=
+github.com/mygaru/uidmap v0.0.0-20250404110053-5c3b40e84fc3 h1:9uwMXXgUCXSvGRbHvfJWJu/tZDw+r7Ty3tqYBrsEa0w=
+github.com/mygaru/uidmap v0.0.0-20250404110053-5c3b40e84fc3/go.mod h1:UhZgzuAvPzfqWpJO/N7RNFgrWPgCRzy1Dx6rgneQEEo=
 github.com/oschwald/maxminddb-golang v1.8.0 h1:Uh/DSnGoxsyp/KYbY1AuP0tYEwfs0sCph9p/UMXK/Hk=
 github.com/oschwald/maxminddb-golang v1.8.0/go.mod h1:RXZtst0N6+FY/3qCNmZMBApR19cdQj43/NM9VkrNAis=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

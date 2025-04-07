@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fastjson"
+	"gitlab.adtelligent.com/common/shared/util"
 	"time"
 )
 
@@ -23,13 +24,15 @@ func (r *UidmapRequest) AddRow(ephID uuid.UUID, token []byte) {
 }
 
 func (r *UidmapRequest) Form() {
-	if (*r)[len(*r)-1] != '}' {
+	if (*r)[len(*r)-1] == '[' {
+		*r = append(*r, "]}"...)
+	} else if (*r)[len(*r)-1] != '}' {
 		(*r)[len(*r)-1] = ']'
 		*r = append(*r, '}')
 	}
 }
 
-func (r *UidmapRequest) Iterate(cb func(ephID uuid.UUID, token []byte) error) error {
+func (r *UidmapRequest) Iterate(cb func(ephID uuid.UUID, token string) error) error {
 	r.Form()
 	val, err := fastjson.ParseBytes(*r)
 	if err != nil {
@@ -44,7 +47,7 @@ func (r *UidmapRequest) Iterate(cb func(ephID uuid.UUID, token []byte) error) er
 			return err
 		}
 
-		err = cb(eph, item.GetStringBytes("1"))
+		err = cb(eph, util.UnsafeBytes2Str(item.GetStringBytes("1")))
 		if err != nil {
 			return err
 		}
