@@ -80,7 +80,7 @@ jobs:
 
       - name: Healthcheck
         run: |
-          APP_NAME="mygaru-gpsi"
+          APP_NAME="gpsi"
           NAMESPACE="argocd"
           MAX_ATTEMPTS=3
           WAIT_TIME=20
