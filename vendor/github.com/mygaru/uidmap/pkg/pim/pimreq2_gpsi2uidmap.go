@@ -5,6 +5,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fastjson"
+	"gitlab.adtelligent.com/common/shared/util"
 	"time"
 )
 
@@ -15,18 +16,20 @@ func NewGpsiRequest(telcoID, partnerID, pimReqID uuid.UUID) GpsiRequest {
 	return []byte(fmt.Sprintf(`{"telco_id": %q, "partner_id": %q, "pim_id": %q, "data": [`, telcoID, partnerID, pimReqID))
 }
 
-func (r *GpsiRequest) AddRow(telcoIdent, token []byte) {
+func (r *GpsiRequest) AddRow(telcoIdent, token string) {
 	*r = append(*r, fmt.Sprintf(`[%q, %q],`, telcoIdent, token)...)
 }
 
 func (r *GpsiRequest) Form() {
-	if (*r)[len(*r)-1] != '}' {
+	if (*r)[len(*r)-1] == '[' {
+		*r = append(*r, "]}"...)
+	} else if (*r)[len(*r)-1] != '}' {
 		(*r)[len(*r)-1] = ']'
 		*r = append(*r, '}')
 	}
 }
 
-func (r *GpsiRequest) Iterate(cb func(telcoIdent, token []byte) error) error {
+func (r *GpsiRequest) Iterate(cb func(telcoIdent, token string) error) error {
 	r.Form()
 	val, err := fastjson.ParseBytes(*r)
 	if err != nil {
@@ -36,7 +39,9 @@ func (r *GpsiRequest) Iterate(cb func(telcoIdent, token []byte) error) error {
 	dataArray := val.GetArray("data")
 
 	for _, item := range dataArray {
-		err := cb(item.GetStringBytes("0"), item.GetStringBytes("1"))
+		err := cb(
+			util.UnsafeBytes2Str(item.GetStringBytes("0")),
+			util.UnsafeBytes2Str(item.GetStringBytes("1")))
 		if err != nil {
 			return err
 		}

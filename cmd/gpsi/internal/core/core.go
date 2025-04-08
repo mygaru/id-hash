@@ -11,9 +11,9 @@ import (
 func ProcessPimBatch(request pim.MsisdnRequest, resp pim.GpsiRequest) (pim.GpsiRequest, error) {
 	// Example implementation, where we map each phone to a hash of itself
 
-	err := request.Iterate(func(phone, token []byte) error {
-		h := strconv.FormatUint(xxhash.Sum64(phone), 10)
-		resp.AddRow([]byte(h), token)
+	err := request.Iterate(func(phone, token string) error {
+		h := strconv.FormatUint(xxhash.Sum64([]byte(phone)), 10)
+		resp.AddRow(h, token)
 		return nil
 	})
 

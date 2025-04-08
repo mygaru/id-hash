@@ -8,7 +8,7 @@ replace github.com/refraction-networking/utls => gitlab.adtelligent.com/common/u
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/mygaru/uidmap v0.0.0-20250404091535-3f123bf941de
+	github.com/mygaru/uidmap v0.0.0-20250404110053-5c3b40e84fc3
 	github.com/valyala/fasthttp v1.59.0
 	github.com/vharitonsky/iniflags v0.0.0-20180513140207-a33cd0b5f3de
 	gitlab.adtelligent.com/common/shared v0.0.0-20250319114405-b8043f2cf31c

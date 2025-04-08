@@ -26,13 +26,15 @@ func (r *MsisdnRequest) AddRow(msisdn string) {
 }
 
 func (r *MsisdnRequest) Form() {
-	if (r.Data)[len(r.Data)-1] != '}' {
+	if (r.Data)[len(r.Data)-1] == '[' {
+		r.Data = append(r.Data, "]}"...)
+	} else if (r.Data)[len(r.Data)-1] != '}' {
 		(r.Data)[len(r.Data)-1] = ']'
 		r.Data = append(r.Data, '}')
 	}
 }
 
-func (r *MsisdnRequest) Iterate(cb func(msisdn, token []byte) error) error {
+func (r *MsisdnRequest) Iterate(cb func(msisdn, token string) error) error {
 	r.Form()
 	val, err := fastjson.ParseBytes(r.Data)
 	if err != nil {
@@ -42,7 +44,9 @@ func (r *MsisdnRequest) Iterate(cb func(msisdn, token []byte) error) error {
 	dataArray := val.GetArray("data")
 
 	for _, item := range dataArray {
-		err := cb(item.GetStringBytes("0"), item.GetStringBytes("1"))
+		err := cb(
+			util.UnsafeBytes2Str(item.GetStringBytes("0")),
+			util.UnsafeBytes2Str(item.GetStringBytes("1")))
 		if err != nil {
 			return err
 		}
@@ -80,17 +84,19 @@ func NewPuidsResponse() PuidsResponse {
 }
 
 func (r *PuidsResponse) Form() {
-	if (*r)[len(*r)-1] != '}' {
+	if (*r)[len(*r)-1] == '[' {
+		*r = append(*r, "]}"...)
+	} else if (*r)[len(*r)-1] != '}' {
 		(*r)[len(*r)-1] = ']'
 		*r = append(*r, '}')
 	}
 }
 
-func (r *PuidsResponse) AddRow(token, puid []byte) {
+func (r *PuidsResponse) AddRow(token, puid string) {
 	*r = append(*r, fmt.Sprintf(`[%q, %q],`, puid, token)...)
 }
 
-func (r *PuidsResponse) Iterate(cb func(token, puid []byte) error) error {
+func (r *PuidsResponse) Iterate(cb func(token, puid string) error) error {
 	r.Form()
 	val, err := fastjson.ParseBytes(*r)
 	if err != nil {
@@ -100,7 +106,10 @@ func (r *PuidsResponse) Iterate(cb func(token, puid []byte) error) error {
 	dataArray := val.GetArray("data")
 
 	for _, item := range dataArray {
-		err := cb(item.GetStringBytes("1"), item.GetStringBytes("0"))
+		err := cb(
+			util.UnsafeBytes2Str(item.GetStringBytes("1")),
+			util.UnsafeBytes2Str(item.GetStringBytes("0")),
+		)
 		if err != nil {
 			return err
 		}
@@ -109,10 +118,10 @@ func (r *PuidsResponse) Iterate(cb func(token, puid []byte) error) error {
 	return nil
 }
 
-func (r *PuidsResponse) GetAsMap() (map[string][]byte, error) {
-	puidMap := make(map[string][]byte)
-	err := r.Iterate(func(token, puid []byte) error {
-		puidMap[util.UnsafeBytes2Str(token)] = puid
+func (r *PuidsResponse) GetAsMap() (map[string]string, error) {
+	puidMap := make(map[string]string)
+	err := r.Iterate(func(token, puid string) error {
+		puidMap[token] = puid
 		return nil
 	})
 	if err != nil {

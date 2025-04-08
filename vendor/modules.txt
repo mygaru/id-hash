@@ -62,7 +62,7 @@ github.com/klauspost/compress/internal/snapref
 github.com/klauspost/compress/zlib
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
-# github.com/mygaru/uidmap v0.0.0-20250404091535-3f123bf941de
+# github.com/mygaru/uidmap v0.0.0-20250404110053-5c3b40e84fc3
 ## explicit; go 1.23.2
 github.com/mygaru/uidmap/pkg/pim
 # github.com/oschwald/maxminddb-golang v1.8.0
