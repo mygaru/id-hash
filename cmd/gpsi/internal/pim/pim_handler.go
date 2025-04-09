@@ -34,13 +34,18 @@ func HandlerProcessMsisdnRequest(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// todo check if ctx.user value is parter id
-
 	dcrBatch := pim.MsisdnRequest{Data: ctx.PostBody()}
 
 	telcoID, partnerID, pimReqID, err := dcrBatch.GetIDs()
 	if err != nil {
 		ctx.Error("failed to get parse body", fasthttp.StatusBadRequest)
+		return
+	}
+
+	certificateName := string(ctx.Request.Header.Peek("X-ClientID"))
+
+	if certificateName != partnerID.String() {
+		ctx.Error("mismatch between certificate and batch partner ID", fasthttp.StatusForbidden)
 		return
 	}
 
