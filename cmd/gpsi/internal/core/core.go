@@ -2,24 +2,24 @@ package core
 
 import (
 	"github.com/cespare/xxhash/v2"
-	"github.com/mygaru/uidmap/pkg/pim"
 	"strconv"
 )
 
-// ProcessPimBatch is responsible for iterating through the phones (MSISDNs) coming from a DCR Client.
-// Check if they exist in the Telecom's DB, and map it to a corresponding value unique for each phone
-func ProcessPimBatch(request pim.MsisdnRequest, resp pim.GpsiRequest) (pim.GpsiRequest, error) {
+// ProcessPimBatch is responsible for iterating through the phones coming from a DCR Client (aka Data Vendor).
+// Check if they exist in the Telecom's DB, and map it to a corresponding value unique for each phone (telco ident value)
+func ProcessPimBatch(incomingBatch [][2]string) (batchToUidmap [][2]string, err error) {
 	// Example implementation, where we map each phone to a hash of itself
 
-	err := request.Iterate(func(phone, token string) error {
-		h := strconv.FormatUint(xxhash.Sum64([]byte(phone)), 10)
-		resp.AddRow(h, token)
-		return nil
-	})
+	mapped := make([][2]string, 0, len(incomingBatch))
 
-	if err != nil {
-		return nil, err
+	for _, entry := range incomingBatch {
+		phone := entry[0]
+		token := entry[1]
+
+		telcoIdent := strconv.FormatUint(xxhash.Sum64([]byte(phone)), 10)
+
+		mapped = append(mapped, [2]string{telcoIdent, token})
 	}
 
-	return resp, nil
+	return mapped, nil
 }

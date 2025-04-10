@@ -1,43 +1,145 @@
-# gpsi
+# Implementing Your Own GPSI Module
 
-## Implemeting Your Own GPSI
+## Goal
 
-TBW.
+The goal of this module is very simple. It must match a collection of phone numbers, 
+coming from myGaru's partners (**Data Vendors**) to a collection of values at your (**Telecommunications Operator**) discretion, 
+referred to here as `telco ident values`.
 
-## Deploy
+Each phone must be mapped to one such  unique `telco ident value`.
 
-Notes:
-- Important to set the address of your UidMap instance (without any path)!
-- Only the IP of your AuthMW instance should be allowed to make requests here! Set `httpAuthAllowedRemoteIPs` as the IP of your AuthMW instance.
-- Makefile run command can be found at ./cmd/gpsi/Makefile.
+After this mapping process, the GPSI component passes along the collection of `telco ident values` to the UID Mapper (UidMap) Component,
+where they are saved.
 
-Config example:
+This way, myGaru can use the representation of the Data Vendor's phone numbers without having access to any Data Vendor or
+Telecommunications Operator's sensitive dataset.
+
+
+## Interface
+
+### Endpoints
+You must provide a single HTTP endpoint:
+
+`POST /pim`
+
+**Request parameters:** none.
+
+**Exected responses:**
+
+
+| Code                       | Description                                                                                                                   | Responde Body |
+|----------------------------|-------------------------------------------------------------------------------------------------------------------------------|---------------|
+| 204 No Content             | Return if batch was successfully passed along to the UID Mapper component.                                                    | None.         |
+| 500 Internval Server Error | Return if the mapping process failed <br/> OR <br/> the request to UID Mapper returned anything other than 204.               | Error text.   |
+| 403 Forbidden              | Return if the X-ClientID header does NOT match the PartnerID in the batch<br/> OR<br/> the request came from unauthorized IP. | None.         |
+| 400 Bad Request            | Return if parsing the JSON body failed.                                                                                       | Error text.   |
+| 405 Method Not Allowed     | Return if request is not POST.                                                                                                | None.         |
+
+**Expected flow:**
+1. Validate IP (See [Access to GPSI](#access-to-gpsi-important)) of the request. If unauthorized, return 403.
+
+2. Parse request body data into expected batch. If this fails, return 400.
+
+Batch structure:
+```json
+{
+  "telco_id": "5cf5ad85-c686-46a0-8f2d-aa0f964b55f6", 
+  "partner_id": "74dac49f-12ea-463a-9fe4-1d0e85af7ae3", 
+  "pim_id": "013801b7-1f13-45f8-b787-f699691ede55", 
+  "data": [
+    ["+380585494404", "e60a9b4b-54a6-41d4-97c5-fc900bf7b464"],
+    ["+380585494405", "a5b64eba-caa2-4336-9d0b-04a2e2eb9bc5"],
+    ["+380585494406", "fa3e5132-30b4-4429-a2fe-3a13c7ca5bcf"],
+    ["+380585494407", "0e09c354-9c63-4fca-af77-492a71ed2ab1"]
+  ]
+}
+```
+
+- `telco_id`: represents the UUID of the Telecommunications Operator in the myGaru system.
+- `partner_id`: represents the UUID of the Data Vendor which initiated this request.
+- `pim_id`: represents the UUID of the request itself.
+- `data`: a list of phone numbers along with their tokens. You must simply replace each phone number with the corresponding `telco ident value`.
+
+
+3. Extract the `X-ClientID` (this is the Common Name from the certificate the Data Vendor presented to our Auth Middleware) header.
+   **IMPORTANT**: If it does NOT equal `partner_id` from the parsed batch, return 403. 
+4. Map the list of phone numbers from the batch to your `telco ident values`, as decribed in the Goal section.
+5. Create the body of the request that must be passed along to the UID Mapper component.
+   It must have this structure:
+
+```json
+{
+  "telco_id": "5cf5ad85-c686-46a0-8f2d-aa0f964b55f6", 
+  "partner_id": "74dac49f-12ea-463a-9fe4-1d0e85af7ae3", 
+  "pim_id": "013801b7-1f13-45f8-b787-f699691ede55", 
+  "data": [
+    ["11487659064281169587", "e60a9b4b-54a6-41d4-97c5-fc900bf7b464"],
+    ["12063760019269155007", "a5b64eba-caa2-4336-9d0b-04a2e2eb9bc5"],
+    ["14640892673165708323", "fa3e5132-30b4-4429-a2fe-3a13c7ca5bcf"],
+    ["6788698777015378439", "0e09c354-9c63-4fca-af77-492a71ed2ab1"]
+  ]
+}
+```
+
+- `telco_id`, `partner_id`, `pim_id`: simply copy them from the incoming batch.
+- `data`: the same list as before, only with `telco ident values` instead of phone numbers. 
+- **IMPORTANT**: please ensure that each token is matched with the `telco ident value` corresponding to its previous phone number. 
+For example, `"+380585494404"` was matched to `"11487659064281169587"`, therefore its token (`"e60a9b4b-54a6-41d4-97c5-fc900bf7b464"`) must be grouped with `"11487659064281169587"`.
+
+
+6. Send the formed batch to the UID Mapper component:
+- The address of the UID Mapper component and timeout interval should be set in your configuation file. See the Configuration section.
+- Set the same `X-ClientID` header as you've received in the incoming request.
+- Send the POST request to the UID Mapper address, path `/pim`, with a timeout **NO LARGER THAN 10m**.
+
+Example:
+```
+POST http://your.uidmap.instance/pim HTTP/1.1
+Host: your.uidmap.instance
+Content-Type: application/json
+Content-Length: 225
+
+{
+  "telco_id": "5cf5ad85-c686-46a0-8f2d-aa0f964b55f6", 
+  "partner_id": "74dac49f-12ea-463a-9fe4-1d0e85af7ae3", 
+  "pim_id": "013801b7-1f13-45f8-b787-f699691ede55", 
+  "data": [
+    ["11487659064281169587", "e60a9b4b-54a6-41d4-97c5-fc900bf7b464"],
+    ["12063760019269155007", "a5b64eba-caa2-4336-9d0b-04a2e2eb9bc5"],
+    ["14640892673165708323", "fa3e5132-30b4-4429-a2fe-3a13c7ca5bcf"],
+    ["6788698777015378439", "0e09c354-9c63-4fca-af77-492a71ed2ab1"]
+  ]
+}
+```
+
+7. Receive the response form UID Mapper.
+   - If UID Mapper returns 204, all is OK, you can return 204.
+   - If UID Mapper returns anything else, return 500 with a text describing the error.
+
+## Configuration
+
+### Access to GPSI (important)
+Since the GPSI component is proxied by Auth Middleware (which makes sure only authorized 
+Data Vendors can iniate requests that reach your GPSI), it is vital to ensure that the only IP that can
+send requests to your GPSI component is your Auth Middleware instance (see Configuration section)!
+
+
+### Config File Example
 ```ini
 [http]
 httpServerListenAddr        = :8000
-httpServerCompressLevel     = 1
-httpServerWriteTimeout      = 10s
-httpServerReadTimeout       = 10s
-httpServerReduceMemoryUsage = true
-httpServerKeepAlivePeriod   = 30s
-httpServerListenBacklog     = 65535
-httpServerGetOnly           = false
-httpServerConcurrency       = 400000
-# 512 MB
-httpServerMaxRequestBodySize = 536870912
-
-[common]
 httpServerName              = MyGaru GPSI
-; allow only auth MW IP to access!
-httpAuthAllowedRemoteIPs    = 127.0.0.1,::1
+# allow only Auth Middleware IP to access!
+httpAuthAllowedRemoteIPs    = 127.0.0.1
 
-
-[log]
-; DEBUG, INFO, WARN, ERROR
-logLevel = INFO
 
 [pim]
-uidMapUri = http://localhost:8000
-pimTimeout = 5m
+# the address of your UID Mapper component instance
+uidMapAddr = http://your.uidmap.instance
+pimTimeout = 1m
 ```
+
+## Deployment
+
+???
 

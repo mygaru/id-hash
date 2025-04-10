@@ -1,32 +1,21 @@
 package pim
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/mygaru/gpsi/cmd/gpsi/internal/core"
-	"github.com/mygaru/uidmap/pkg/pim"
 	"github.com/valyala/fasthttp"
-	"gitlab.adtelligent.com/common/shared/log"
+	"log"
 	"time"
 )
 
+// EXAMPLE IMPLEMENTATION
+
 var (
-	uidMapUri  = flag.String("uidMapUri", "http://localhost:8022", "Uidmap URI")
+	uidMapAddr = flag.String("uidMapAddr", "http://localhost:8022", "Uidmap Address")
 	pimTimeout = flag.Duration("pimTimeout", 5*time.Minute, "Timeout for sending PIM batch to uidmap")
 )
-
-func Route(path string, ctx *fasthttp.RequestCtx) bool {
-
-	switch path {
-	case "/pim", "/pim/":
-		HandlerProcessMsisdnRequest(ctx)
-
-	default:
-		return false
-	}
-
-	return true
-}
 
 func HandlerProcessMsisdnRequest(ctx *fasthttp.RequestCtx) {
 	if !ctx.IsPost() {
@@ -34,36 +23,70 @@ func HandlerProcessMsisdnRequest(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	dcrBatch := pim.MsisdnRequest{Data: ctx.PostBody()}
+	// 2. Parse request body data into expected batch. If this fails, return 400.
+	var batch struct {
+		TelcoID   string      `json:"telco_id"`
+		PartnerID string      `json:"partner_id"`
+		PimID     string      `json:"pim_id"`
+		Data      [][2]string `json:"data"` // [phoneNumber, token]
+	}
 
-	telcoID, partnerID, pimReqID, err := dcrBatch.GetIDs()
-	if err != nil {
-		ctx.Error("failed to get parse body", fasthttp.StatusBadRequest)
+	if err := json.Unmarshal(ctx.PostBody(), &batch); err != nil {
+		ctx.Error("failed to parse JSON body", fasthttp.StatusBadRequest)
 		return
 	}
 
-	certificateName := string(ctx.Request.Header.Peek("X-ClientID"))
+	log.Printf("Got PIM batch telco=%q pim=%q pid=%q", batch.TelcoID, batch.PimID, batch.PartnerID)
 
-	if certificateName != partnerID.String() {
-		ctx.Error("mismatch between certificate and batch partner ID", fasthttp.StatusForbidden)
+	// 3. Validate PartnerID matches X-ClientID
+	clientID := string(ctx.Request.Header.Peek("X-ClientID"))
+	if clientID != batch.PartnerID {
+		ctx.SetStatusCode(fasthttp.StatusForbidden)
 		return
 	}
 
-	log.Infof("Got PIM batch, id=%s, telco=%s, partner=%s", pimReqID, telcoID, partnerID)
-
-	log.Debugf("%s", dcrBatch.Data)
-
-	gpsi2Uidmap := pim.NewGpsiRequest(telcoID, partnerID, pimReqID)
-	gpsi2Uidmap, err = core.ProcessPimBatch(dcrBatch, gpsi2Uidmap)
+	// 4. Process the mapping from phone number -> telco ident value
+	mappedData, err := core.ProcessPimBatch(batch.Data)
 	if err != nil {
-		ctx.Error(fmt.Sprintf("error while processing request, err = %v", err), fasthttp.StatusInternalServerError)
+		ctx.Error(fmt.Sprintf("failed to process batch: %v", err), fasthttp.StatusInternalServerError)
 		return
 	}
 
-	log.Debugf("%s", gpsi2Uidmap)
-	err = pim.SendGpsiRequest(gpsi2Uidmap, *uidMapUri, *pimTimeout)
+	// 5. Build request body to send to UID Mapper
+	uidMapperPayload := map[string]interface{}{
+		"telco_id":   batch.TelcoID,
+		"partner_id": batch.PartnerID,
+		"pim_id":     batch.PimID,
+		"data":       mappedData,
+	}
+
+	payloadBytes, err := json.Marshal(uidMapperPayload)
 	if err != nil {
-		ctx.Error(fmt.Sprintf("failed to send PIM request: %v", err), fasthttp.StatusInternalServerError)
+		ctx.Error(fmt.Sprintf("failed to marshal payload: %v", err), fasthttp.StatusInternalServerError)
+		return
+	}
+
+	// 6. Send request to UID Mapper
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	req.SetRequestURI(fmt.Sprintf("%s/pim", *uidMapAddr))
+	req.Header.SetMethod(fasthttp.MethodPost)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-ClientID", clientID)
+	req.SetBody(payloadBytes)
+
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+
+	// 7. Process UID Mapper response
+	if err := fasthttp.DoTimeout(req, resp, *pimTimeout); err != nil {
+		ctx.Error(fmt.Sprintf("failed to send request to UID Mapper: %v", err), fasthttp.StatusInternalServerError)
+		return
+	}
+
+	if resp.StatusCode() != fasthttp.StatusNoContent {
+		ctx.Error(fmt.Sprintf("UID Mapper returned unexpected status: %d", resp.StatusCode()), fasthttp.StatusInternalServerError)
 		return
 	}
 
