@@ -3,3 +3,4 @@
 manifests
 docker-compose.yml
 configs/argo-application-ukrtelecom.yml
+.syncignore
