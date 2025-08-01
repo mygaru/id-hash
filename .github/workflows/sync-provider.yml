@@ -70,7 +70,7 @@ jobs:
           cd "$TEMP_DIR/target_repo"
           git add .
           if ! git diff --cached --quiet; then
-            git commit -m "Sync changes from source repo"
+            git commit -m "Sync"
             git push origin "$TARGET_REPO_BRANCH"
           else
             echo "No changes to commit."
