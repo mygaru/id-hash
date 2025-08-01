@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         options:
-          - 'github.com/mygaru-vint/mygaru-acct-catcher.git'
+          - 'https://github.com/mygaru/id-hash'
       REPO_BRANCH:
         description: 'Target sync repository branch:'
         required: true
