@@ -8,7 +8,7 @@ on:
         required: true
         type: choice
         options:
-          - 'https://github.com/mygaru/id-hash.git'
+          - 'github.com/mygaru/id-hash.git'
       REPO_BRANCH:
         description: 'Target sync repository branch:'
         required: true
