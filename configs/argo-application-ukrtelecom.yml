@@ -18,7 +18,7 @@ spec:
       - name: "deployment.server.image.tag"
         value: "TAG_NAME"
       valueFiles:
-        - mygaru-values/ukrtelecom/values.gpsi.yaml
+        - mygaru-values/ukrtelecom/values.id-hash.yaml
   # Destination cluster and namespace to deploy the application
   destination:
     server: https://kubernetes.default.svc
