@@ -1,4 +1,4 @@
-# Implementing Your Own GPSI Module
+# Implementing Your Own ID Hash Module
 
 ## Goal
 
@@ -8,7 +8,7 @@ referred to here as `telco ident values`.
 
 Each phone must be mapped to one such unique `telco ident value`. One phone number must always correspond to one `telco ident value`.
 
-After this mapping, the GPSI component forwards the mapped batch to the UID Mapper (UidMap) component for storage and further processing.
+After this mapping, the ID Hash component forwards the mapped batch to the UID Mapper (UidMap) component for storage and further processing.
 
 This ensures that myGaru can use an anonymized representation of the Data Vendor's phone numbers 
 without having access to sensitive data
@@ -37,7 +37,7 @@ You must provide a single HTTP endpoint:
 | 405 Method Not Allowed    | Return if request is not POST.                                                                                                | None.               |
 
 **Expected flow:**
-1. Validate IP (See [Access to GPSI](#access-to-gpsi-important)) of the request. If unauthorized, return 403.
+1. Validate IP (See [Access to ID Hash](#access-to-ID Hash-important)) of the request. If unauthorized, return 403.
 
 2. Parse request body data into expected batch. If this fails, return 400.
 
@@ -119,17 +119,17 @@ Content-Length: 225
 
 ## Configuration
 
-### Access to GPSI (important)
-The GPSI component is protected by an Auth Middleware, which ensures that only authorized Data Vendors can initiate requests.
+### Access to ID Hash (important)
+The ID Hash component is protected by an Auth Middleware, which ensures that only authorized Data Vendors can initiate requests.
 To maintain this security, 
-the only IP address allowed to access GPSI should be that of your Auth Middleware instance (see the Config File Example section)!
+the only IP address allowed to access ID Hash should be that of your Auth Middleware instance (see the Config File Example section)!
 
 
 ### Config File Example
 ```ini
 [http]
 httpServerListenAddr        = :8000
-httpServerName              = MyGaru GPSI
+httpServerName              = MyGaru ID Hash
 # allow only Auth Middleware IP to access!
 httpAuthAllowedRemoteIPs    = 127.0.0.1
 
