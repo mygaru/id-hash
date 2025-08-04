@@ -80,7 +80,7 @@ jobs:
 
       - name: Healthcheck
         run: |
-          APP_NAME="gpsi"
+          APP_NAME="id-hash"
           NAMESPACE="argocd"
           MAX_ATTEMPTS=3
           WAIT_TIME=20

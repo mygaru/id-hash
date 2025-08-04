@@ -1,6 +1,6 @@
 FROM golang:1.23.6 AS builder
 ARG ENV_NAME
-ARG APP_NAME=gpsi
+ARG APP_NAME=id-hash
 WORKDIR /usr/src/${APP_NAME}
 
 COPY . .
@@ -12,10 +12,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -mod vendor -ldflags "\
 
 # Final stage
 FROM alpine
-ARG APP_NAME=gpsi
+ARG APP_NAME=id-hash
 COPY --from=builder /usr/local/bin/${APP_NAME} /usr/local/bin/${APP_NAME}
 
 EXPOSE 8080
 EXPOSE 11813
 
-CMD ["/usr/local/bin/gpsi", "-config", "/etc/gpsi/base.ini"]
+CMD ["/usr/local/bin/id-hash", "-config", "/etc/id-hash/base.ini"]
