@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/mygaru/gpsi/cmd/gpsi/internal/core"
+	"github.com/mygaru/id-hash/cmd/id-hash/internal/core"
 	"github.com/valyala/fasthttp"
 	"log"
 	"time"

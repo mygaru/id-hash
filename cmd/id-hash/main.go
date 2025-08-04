@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/mygaru/gpsi/cmd/gpsi/internal/pim"
+	"github.com/mygaru/id-hash/cmd/id-hash/internal/pim"
 	"github.com/valyala/fasthttp"
 	"github.com/vharitonsky/iniflags"
 	"log"
@@ -14,7 +14,7 @@ import (
 
 var (
 	httpAuthAllowedRemoteIPs = flag.String("httpAuthAllowedRemoteIPs", "127.0.0.1/24", "List of IPs and subnets allowed to send requests")
-	httpServerName           = flag.String("httpServerName", "MyGaru GPSI", "Name of the server")
+	httpServerName           = flag.String("httpServerName", "MyGaru ID HASH", "Name of the server")
 	httpServerListenAddr     = flag.String("httpServerListenAddr", ":8080", "Listen port for http server")
 )
 
@@ -69,7 +69,7 @@ func requestHandler(ctx *fasthttp.RequestCtx) {
 	case "/egg", "/egg/":
 		// test endpoint, for status check
 		_, _ = fmt.Fprintf(ctx, `
-      GPSI
+      ID HASH
 ----------------------------------
 	    /\_/\
 	  =( °w° )=
