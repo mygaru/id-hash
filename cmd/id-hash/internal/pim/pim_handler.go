@@ -86,7 +86,7 @@ func HandlerProcessMsisdnRequest(ctx *fasthttp.RequestCtx) {
 	}
 
 	if resp.StatusCode() != fasthttp.StatusNoContent {
-		ctx.Error(fmt.Sprintf("UID Mapper returned unexpected status: %d", resp.StatusCode()), fasthttp.StatusInternalServerError)
+		ctx.Error(fmt.Sprintf("UID Mapper returned unexpected status %d: %v", resp.StatusCode(), resp.Body()), fasthttp.StatusInternalServerError)
 		return
 	}
 
