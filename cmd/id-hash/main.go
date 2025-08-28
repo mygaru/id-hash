@@ -13,9 +13,10 @@ import (
 )
 
 var (
-	httpAuthAllowedRemoteIPs = flag.String("httpAuthAllowedRemoteIPs", "127.0.0.1/24", "List of IPs and subnets allowed to send requests")
-	httpServerName           = flag.String("httpServerName", "MyGaru ID HASH", "Name of the server")
-	httpServerListenAddr     = flag.String("httpServerListenAddr", ":8080", "Listen port for http server")
+	httpAuthAllowedRemoteIPs     = flag.String("httpAuthAllowedRemoteIPs", "127.0.0.1/24", "List of IPs and subnets allowed to send requests")
+	httpServerName               = flag.String("httpServerName", "MyGaru ID HASH", "Name of the server")
+	httpServerListenAddr         = flag.String("httpServerListenAddr", ":8080", "Listen port for http server")
+	httpServerMaxRequestBodySize = flag.Int("httpServerMaxRequestBodySize", fasthttp.DefaultMaxRequestBodySize, "Max request body size")
 )
 
 var (
@@ -36,10 +37,11 @@ func runServer(handler func(ctx *fasthttp.RequestCtx)) {
 	}
 
 	s := &fasthttp.Server{
-		Handler:      handler,
-		Name:         *httpServerName,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
+		Handler:            handler,
+		Name:               *httpServerName,
+		ReadTimeout:        1 * time.Minute,
+		WriteTimeout:       1 * time.Minute,
+		MaxRequestBodySize: *httpServerMaxRequestBodySize,
 	}
 
 	ln, err := net.Listen("tcp4", *httpServerListenAddr)
