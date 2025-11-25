@@ -3,7 +3,7 @@ name: CI/CD utk
 on:
   push:
     tags:
-      - '*'
+      - '[0-9]+.[0-9]+.[0-9]+-ukrtelecom'
 env:
   ENV_NAME: prod
 jobs:
