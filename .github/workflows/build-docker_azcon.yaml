@@ -1,0 +1,53 @@
+name: Deploy Image to storage server box.mygaru.com
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+-azcon'
+
+jobs:
+  build:
+    runs-on: [self-hosted, mygaru] 
+    environment: azconn
+    env: 
+      REPO: id-hash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+        id: buildx
+        with:
+          install: true
+      
+      - name: Build and export Docker image as tar
+        uses: docker/build-push-action@v5 
+        with:
+          context: .
+          file: ./Dockerfile 
+          tags: ghcr.io/${{ github.repository_owner }}/${{ env.REPO }}:${{ github.ref_name }} 
+          outputs: type=docker,dest=/tmp/${{ env.REPO }}-${{ github.ref_name }}.tar
+        
+      - name: show image
+        run: | 
+            ls -latr /tmp
+            echo "IMAGE TAG: ghcr.io/${{ github.repository_owner }}/${{ env.REPO }}:${{ github.ref_name }} "
+            echo "IMAGE FILE NAME: ${{ env.REPO }}-${{ github.ref_name }}.tar"
+    
+      - name: Upload image to storage
+        run: |
+            if ! command -v sshpass >/dev/null 2>&1; then
+              echo "Installing sshpass ..."
+              sudo apt-get update -qq
+              DEBIAN_FRONTEND=noninteractive sudo apt-get install -y -qq sshpass
+            fi
+            
+            mkdir -p ~/.ssh
+            chmod 700 ~/.ssh
+                
+            ssh-keyscan -p ${{ secrets.PORT }} ${{ secrets.USER }}.your-storagebox.de >> ~/.ssh/known_hosts
+            chmod 644 ~/.ssh/known_hosts
+            sshpass -p "${{ secrets.PASSWORD }}" scp -P ${{ secrets.PORT }}  \
+            /tmp/${{ env.REPO }}-${{ github.ref_name }}.tar  ${{ secrets.USER }}@${{ secrets.USER }}.your-storagebox.de:/home/filestorage
