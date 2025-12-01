@@ -1,0 +1,19 @@
+services:
+  id-hash:
+    pull_policy: never
+    image: ghcr.io/mygaru/id-hash:1.0.0
+    container_name: id-hash
+    restart: always
+    volumes:
+      - ./configs/id-hash.ini:/etc/id-hash/base.ini
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      ident_network:
+        ipv4_address: 172.20.0.10
+networks:
+  ident_network:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
