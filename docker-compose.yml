@@ -1,7 +1,7 @@
 services:
   id-hash:
     pull_policy: never
-    image: <your_builded_image>
+    image: <your_built_image>
     ### EXAMPLE ###
     #image: ghcr.io/mygaru/id-hash:1.0.0
     container_name: id-hash
