@@ -1,4 +1,4 @@
-FROM golang:1.23.6 AS builder
+FROM golang:1.24 AS builder
 ARG ENV_NAME
 ARG APP_NAME=id-hash
 WORKDIR /usr/src/${APP_NAME}
