@@ -21,7 +21,7 @@ To get a custom hash, the statement `strconv.FormatUint(xxhash.Sum64([]byte(phon
 **For example**, the following snippet uses sha256 with salt to generate a hash of the incoming value:
 
 ```go
-  salt := "my_secret_salt_123!" 
+	salt := "my_secret_salt_123!" 
 	for _, entry := range incomingBatch {
 		phone := entry[0]
 		token := entry[1]
