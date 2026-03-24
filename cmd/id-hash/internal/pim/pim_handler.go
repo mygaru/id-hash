@@ -23,6 +23,8 @@ func HandlerProcessMsisdnRequest(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
+	// Step 1 (validating IP is in requestHandler)
+
 	// 2. Parse request body data into expected batch. If this fails, return 400.
 	var batch struct {
 		TelcoID   string      `json:"telco_id"`
@@ -45,7 +47,7 @@ func HandlerProcessMsisdnRequest(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	// 4. Process the mapping from phone number -> telco ident value
+	// 4. Process the mapping from phone number -> telco hash
 	mappedData, err := core.ProcessPimBatch(batch.Data)
 	if err != nil {
 		ctx.Error(fmt.Sprintf("failed to process batch: %v", err), fasthttp.StatusInternalServerError)

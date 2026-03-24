@@ -4,9 +4,9 @@
 
 The goal of this module is very simple. It must match a collection of phone numbers, 
 coming from myGaru's partners (**Data Vendors**) to a collection of values at your (**Telecommunications Operator**) discretion, 
-referred to here as `telco ident values`.
+referred to here as `telco hashes`.
 
-Each phone must be mapped to one such unique `telco ident value`. One phone number must always correspond to one `telco ident value`.
+Each phone must be mapped to one such unique `telco hash`. One phone number must always correspond to one `telco hash`.
 
 After this mapping, the ID HASH component forwards the mapped batch to the UID Mapper (UidMap) component for storage and further processing.
 
@@ -15,8 +15,13 @@ without having access to sensitive data
 from either the Data Vendor or the Telecommunications Operator.
 
 ## Hash Customization
-The `cmd/id-hash/internal/core/core.go` file contains the ProcessPimBatch, which uses the xxhash library to generate the hashed values of the incoming value.
-To get a custom hash, the statement `strconv.FormatUint(xxhash.Sum64([]byte(phone)), 10)` need to be modified. The result should be a string.
+The `cmd/id-hash/internal/core/core.go` file contains the ProcessPimBatch function, which uses the xxhash library to 
+generate `telco hashes` of the incoming values.
+
+To get a custom hash, the statement 
+`strconv.FormatUint(xxhash.Sum64([]byte(phone)), 10)` needs to be modified. 
+
+**The result should be a string.**
 
 **For example**, the following snippet uses sha256 with salt to generate a hash of the incoming value:
 
@@ -26,7 +31,7 @@ To get a custom hash, the statement `strconv.FormatUint(xxhash.Sum64([]byte(phon
 		phone := entry[0]
 		token := entry[1]
 
-		// This is a changed code
+		// Modified hashing method
 		hashBytes := sha256.Sum256([]byte(phone + salt))
 		telcoIdent := hex.EncodeToString(hashBytes[:])
 		// end of changes
@@ -45,6 +50,8 @@ You must provide a single HTTP endpoint:
 
 `POST /pim`
 
+
+
 **Request parameters:** none.
 
 **Expected responses:**
@@ -59,6 +66,9 @@ You must provide a single HTTP endpoint:
 | 405 Method Not Allowed    | Return if request is not POST.                                                                                                | None.               |
 
 **Expected flow:**
+
+**See HandlerProcessMsisdnRequest (`cmd/id-hash/internal/pim/pim_handler.go`) for a detailed example.**
+
 1. Validate IP (See [Access to ID HASH](#access-to-id-hash-important)) of the request. If unauthorized, return 403.
 
 2. Parse request body data into expected batch. If this fails, return 400.
@@ -70,10 +80,10 @@ Batch structure:
   "partner_id": "74dac49f-12ea-463a-9fe4-1d0e85af7ae3", 
   "pim_id": "013801b7-1f13-45f8-b787-f699691ede55", 
   "data": [
-    ["+380585494404", "e60a9b4b-54a6-41d4-97c5-fc900bf7b464"],
-    ["+380585494405", "a5b64eba-caa2-4336-9d0b-04a2e2eb9bc5"],
-    ["+380585494406", "fa3e5132-30b4-4429-a2fe-3a13c7ca5bcf"],
-    ["+380585494407", "0e09c354-9c63-4fca-af77-492a71ed2ab1"]
+    ["380585494404", "e60a9b4b-54a6-41d4-97c5-fc900bf7b464"],
+    ["380585494405", "a5b64eba-caa2-4336-9d0b-04a2e2eb9bc5"],
+    ["380585494406", "fa3e5132-30b4-4429-a2fe-3a13c7ca5bcf"],
+    ["380585494407", "0e09c354-9c63-4fca-af77-492a71ed2ab1"]
   ]
 }
 ```
@@ -81,12 +91,12 @@ Batch structure:
 - `telco_id`: represents the UUID of the Telecommunications Operator in the myGaru system.
 - `partner_id`: represents the UUID of the Data Vendor which initiated this request.
 - `pim_id`: represents the UUID of the request itself.
-- `data`: a list of phone numbers along with their tokens. You must simply replace each phone number with the corresponding `telco ident value`.
+- `data`: a list of phone numbers along with their tokens. You must simply replace each phone number with the corresponding `telco hash`.
 
 
-3. Validate the `X-ClientID` header (this represents the Common Name from the certificate presented via the Auth Middleware).
+3. Validate the `X-ClientID` header (this represents the Common Name from the certificate presented via the ID Check).
    **IMPORTANT**: If it does NOT equal `partner_id` from the parsed batch, return 403. 
-4. Map the list of phone numbers from the batch to your `telco ident values`, as decribed in the Goal section.
+4. Map the list of phone numbers from the batch to your `telco hashes`, as decribed in the Goal section.
 5. Create the body of the request that must be passed along to the UID Mapper component.
    It must have this structure:
 
@@ -105,9 +115,9 @@ Batch structure:
 ```
 
 - `telco_id`, `partner_id`, `pim_id`: simply copy them from the incoming batch.
-- `data`: the same list as before, only with `telco ident values` instead of phone numbers. 
-- **IMPORTANT**: please ensure that each token is matched with the `telco ident value` corresponding to its previous phone number. 
-For example, `"+380585494404"` was matched to `"11487659064281169587"`, therefore its token (`"e60a9b4b-54a6-41d4-97c5-fc900bf7b464"`) must be grouped with `"11487659064281169587"`.
+- `data`: the same list as before, only with `telco hashes` instead of phone numbers. 
+- **IMPORTANT**: please ensure that each token is matched with the `telco hash` corresponding to its previous phone number. 
+For example, `"380585494404"` was matched to `"11487659064281169587"`, therefore its token (`"e60a9b4b-54a6-41d4-97c5-fc900bf7b464"`) must be grouped with `"11487659064281169587"`.
 
 
 6. Send the formed batch to the UID Mapper component:
@@ -142,9 +152,9 @@ Content-Length: 225
 ## Configuration
 
 ### Access to ID HASH (important)
-The ID HASH component is protected by an Auth Middleware, which ensures that only authorized Data Vendors can initiate requests.
+The ID HASH component is protected by an ID Check, which ensures that only authorized Data Vendors can initiate requests.
 To maintain this security, 
-the only IP address allowed to access ID HASH should be that of your Auth Middleware instance (see the Config File Example section)!
+the only IP address allowed to access ID HASH should be that of your ID Check instance (see the Config File Example section)!
 
 
 ### Config File Example
@@ -152,7 +162,7 @@ the only IP address allowed to access ID HASH should be that of your Auth Middle
 [http]
 httpServerListenAddr        = :8000
 httpServerName              = MyGaru ID HASH
-# allow only Auth Middleware IP to access!
+# allow only ID Check IP to access!
 httpAuthAllowedRemoteIPs    = 127.0.0.1
 
 

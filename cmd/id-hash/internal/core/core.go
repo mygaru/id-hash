@@ -6,7 +6,7 @@ import (
 )
 
 // ProcessPimBatch is responsible for iterating through the phones coming from a DCR Client (aka Data Vendor).
-// Check if they exist in the Telecom's DB, and map it to a corresponding value unique for each phone (telco ident value)
+// Check if they exist in the Telecom's DB, and map it to a corresponding value unique for each phone (telco hash)
 func ProcessPimBatch(incomingBatch [][2]string) (batchToUidmap [][2]string, err error) {
 	// Example implementation, where we map each phone to a hash of itself
 
