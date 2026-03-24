@@ -14,6 +14,28 @@ This ensures that myGaru can use an anonymized representation of the Data Vendor
 without having access to sensitive data
 from either the Data Vendor or the Telecommunications Operator.
 
+## Hash Customization
+The `cmd/id-hash/internal/core/core.go` file contains the ProcessPimBatch, which uses the xxhash library to generate the hashed values of the incoming value.
+To get a custom hash, the statement `strconv.FormatUint(xxhash.Sum64([]byte(phone)), 10)` need to be modified. The result should be a string.
+
+**For example**, the following snippet uses sha256 with salt to generate a hash of the incoming value:
+
+```go
+  salt := "my_secret_salt_123!" 
+	for _, entry := range incomingBatch {
+		phone := entry[0]
+		token := entry[1]
+
+		// This is a changed code
+    hashBytes := sha256.Sum256([]byte(phone + salt))
+		telcoIdent := hex.EncodeToString(hashBytes[:])
+    // end of changes
+
+		mapped = append(mapped, [2]string{telcoIdent, token})
+	}
+```
+
+After changes are done, use standart deployment procedure to deploy the module in your environment.
 
 ## Interface
 
