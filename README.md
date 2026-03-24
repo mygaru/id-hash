@@ -27,9 +27,9 @@ To get a custom hash, the statement `strconv.FormatUint(xxhash.Sum64([]byte(phon
 		token := entry[1]
 
 		// This is a changed code
-    hashBytes := sha256.Sum256([]byte(phone + salt))
+		hashBytes := sha256.Sum256([]byte(phone + salt))
 		telcoIdent := hex.EncodeToString(hashBytes[:])
-    // end of changes
+		// end of changes
 
 		mapped = append(mapped, [2]string{telcoIdent, token})
 	}
