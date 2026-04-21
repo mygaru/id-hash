@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	function = flag.String("function", "", "aes256|sha256")
+	function = flag.String("function", "sha256", "sha256")
 	key      = flag.String("key", "", "Used as salt for sha256. Used as key for aes256.")
 )
 
@@ -20,7 +20,7 @@ var (
 const keylen = 64
 
 type HashEnc interface {
-	// GenerateResult either via hashing (SHA256) or encryption (AES256), depending on the -function flag
+	// GenerateResult either via hashing or encryption, depending on the -function flag
 	GenerateResult([]byte) ([]byte, error)
 }
 
@@ -39,8 +39,6 @@ func Get() HashEnc {
 		}
 
 		switch *function {
-		case "aes256":
-			log.Fatal("hashenc: unsupported hash function: -function aes256")
 
 		case "sha256":
 			he = sha256.New([]byte(*key))
