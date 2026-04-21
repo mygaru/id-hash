@@ -15,30 +15,40 @@ without having access to sensitive data
 from either the Data Vendor or the Telecommunications Operator.
 
 ## Hash Customization
-The `cmd/id-hash/internal/core/core.go` file contains the ProcessPimBatch function, which uses the xxhash library to 
-generate `telco hashes` of the incoming values.
 
-To get a custom hash, the statement 
-`strconv.FormatUint(xxhash.Sum64([]byte(phone)), 10)` needs to be modified. 
+By default, SHA256 is used to hash incoming data.
 
-**The result should be a string.**
-
-**For example**, the following snippet uses sha256 with salt to generate a hash of the incoming value:
-
-```go
-	salt := "my_secret_salt_123!" 
-	for _, entry := range incomingBatch {
-		phone := entry[0]
-		token := entry[1]
-
-		// Modified hashing method
-		hashBytes := sha256.Sum256([]byte(phone + salt))
-		telcoIdent := hex.EncodeToString(hashBytes[:])
-		// end of changes
-
-		mapped = append(mapped, [2]string{telcoIdent, token})
-	}
+```ini
+[hashing]
+function=sha256
+# 64 chars, quoted. Example: "my_64_len_key_here..."
+key=
 ```
+
+To add your own hashing method, implement the HashEnc interface (internal/core/hashenc/hashenc.go):
+```go
+type HashEnc interface {
+	// GenerateResult either via hashing or encryption, depending on the -function flag
+	GenerateResult([]byte) ([]byte, error)
+}
+```
+
+As example use internal/core/hashenc/sha256.
+
+After which add your hashing method to the switch in hashenc.go:
+```go
+		switch *function {
+		case "sha256":
+			he = sha256.New([]byte(*key))
+
+			// add your cases here...
+
+		default:
+			log.Fatalf("hashenc: unsupported hash function: %s", *function)
+		}
+```
+
+Use the `key` flag either as an encryption key or salt.
 
 After changes are done, use standart deployment procedure to deploy the module in your environment.
 
