@@ -1,0 +1,74 @@
+name: Deploy Ident Image for Vietnam
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+-vietnam'
+      - 'v[0-9]+.[0-9]+.[0-9]+-vietnam'
+env:
+  ENV_NAME: prod
+jobs:
+  build:
+    runs-on: [self-hosted, mygaru] 
+    outputs:
+      base_tag: ${{ steps.extract_tag.outputs.base_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+        id: buildx
+        with:
+          install: true
+
+      - name: Extract base tag
+        id: extract_tag
+        run: |
+          TAG_NAME="${GITHUB_REF##*/}"
+          BASE_TAG="${TAG_NAME%-vietnam}"
+          echo "BASE_TAG extracted: $BASE_TAG"
+          echo "base_tag=${BASE_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Login to Remote GitHub Container Registry
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.VIETNAM_GHCR_USERNAME }}
+          password: ${{ secrets.VIETNAM_GHCR_PASSWORD }}
+
+      - name: Get array of image tags
+        shell: bash
+        run: echo "VERSION=$(docker run --rm quay.io/skopeo/stable:v1.3.1 --creds=${{ secrets.DEPLOY_GHCR_USERNAME }}:${{ secrets.DEPLOY_GHCR_PASSWORD }} list-tags docker://ghcr.io/$GITHUB_REPOSITORY | jq -r '.Tags[]' |  grep -E '[0-9]+\.[0-9]+\.[0-9]+\.[a-z]+\.[0-9]+' | sort -t . -g -k 5 | tail -n 1 | awk -F \. {'print $5+1'})" >> $GITHUB_ENV
+
+
+      - name: Get DATE Env
+        shell: bash
+        run: echo "DATE=$(date '+%Y-%m-%dT%H:%M:%S%z' | sed 's@^.\{22\}@&:@')" >> $GITHUB_ENV
+
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          pull: true
+          tags: |
+            ghcr.io/mygaru-vint/mygaru-viettel:${{ github.event.repository.name }}-${{ steps.extract_tag.outputs.base_tag }}
+
+    #   - name: Send email notification
+    #     uses: dawidd6/action-send-mail@v3
+    #     with:
+    #       server_address: ${{ secrets.SMTP_SERVER }}
+    #       server_port: ${{ secrets.SMTP_PORT }}
+    #       username: ${{ secrets.SMTP_USERNAME }}
+    #       password: ${{ secrets.SMTP_PASSWORD }}
+    #       subject: '[GitHub Actions] New Image Pushed - ${{ github.event.repository.name }}'
+    #       to: ${{ vars.NOTIFY_EMAILS }}
+    #       from: GitHub Actions
+    #       body: |
+    #         A new image has been successfully built and pushed to the remote registry.
+
+    #         Image: ghcr.io/${{ github.repository_owner }}/mygaru-vint:${{ github.event.repository.name }}-${{ steps.extract_tag.outputs.base_tag }}
+            
+    #         Repository: ${{ github.repository }}
+    #         Triggered by: ${{ github.actor }}
