@@ -20,6 +20,6 @@ func (s *SHA256) GenerateResult(plaintxt []byte) ([]byte, error) {
 	h := sha.Sum(nil)
 	res := make([]byte, base64.StdEncoding.EncodedLen(len(h)))
 
-	base64.StdEncoding.Encode(res, sha.Sum(nil))
+	base64.StdEncoding.Encode(res, h)
 	return res, nil
 }
