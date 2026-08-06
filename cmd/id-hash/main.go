@@ -89,7 +89,11 @@ MyGaru Inc`)
 
 func logAllFlags() {
 	flag.VisitAll(func(f *flag.Flag) {
-		log.Printf("FLAG: --%s=%s", f.Name, f.Value)
+		if strings.Contains(f.Name, "key") {
+			log.Printf("FLAG: --%s=REDACTED", f.Name)
+		} else {
+			log.Printf("FLAG: --%s=%s", f.Name, f.Value)
+		}
 	})
 }
 

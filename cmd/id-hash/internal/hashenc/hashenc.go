@@ -2,6 +2,7 @@ package hashenc
 
 import (
 	"flag"
+	"github.com/mygaru/id-hash/cmd/id-hash/internal/hashenc/mock"
 	"github.com/mygaru/id-hash/cmd/id-hash/internal/hashenc/sha256"
 	"log"
 	"sync"
@@ -43,7 +44,8 @@ func Get() HashEnc {
 		case "sha256":
 			he = sha256.New([]byte(*key))
 
-			// add your cases here...
+		case "mock":
+			he = mock.New([]byte(*key))
 
 		default:
 			log.Fatalf("hashenc: unsupported hash function: %s", *function)

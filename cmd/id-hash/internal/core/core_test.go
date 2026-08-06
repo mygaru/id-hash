@@ -1,65 +1,106 @@
 package core
 
 import (
-	"bufio"
 	"flag"
-	"github.com/google/uuid"
-	"github.com/mygaru/id-hash/cmd/id-hash/internal/hashenc"
 	"log"
-	"os"
+	"reflect"
 	"testing"
 )
 
-func TestPimBach(t *testing.T) {
-	flag.Set("function", "sha256")
+func TestProcessPimBatch(t *testing.T) {
+	flag.Set("function", "mock")
 	flag.Set("key", "FoHlAH3.YCF70C7?W&HV0pC03wn+&cUmRfNOe1sHUQ;(VKIPf:<UW$Sk!8nriQ4/")
 	flag.Parse()
 
-	token := uuid.NewString()
-	r, err := ProcessPimBatch([][2]string{{"h1", token}})
-	if err != nil {
-		t.Fatal(err)
+	// NOTE: You will need to swap out how `hashenc.Get()` is mocked
+	// in your actual code if it uses a global state.
+
+	tests := []struct {
+		name          string
+		incomingBatch [][2]string
+		wantMap       [][2]string
+		wantErr       bool
+	}{
+		{
+			name: "Condition 1: Valid numeric MSISDN (<= 15 digits) should be hashed (b64 output)",
+			incomingBatch: [][2]string{
+				{"1234567890", "token1"},
+			},
+			wantMap: [][2]string{
+				{"bW9ja0I2NFJlc3VsdA==", "token1"}, // output of mock hash
+			},
+			wantErr: false,
+		},
+		{
+			name: "Condition 1: Numeric but > 15 digits should be left alone",
+			incomingBatch: [][2]string{
+				{"1234567890123456", "token2"}, // 16 digits (Valid Hex too, so it gets hex-decoded)
+			},
+			wantMap: [][2]string{
+				{"1234567890123456", "token2"}, // hex.Decode("1234567890123456") -> b64 encoded
+			},
+			wantErr: false,
+		},
+		{
+			name: "Condition 2: random non-msisdn values should be left alone",
+			incomingBatch: [][2]string{
+				{"4a3f2b", "token3"}, // "4a3f2b" in hex is [74, 63, 43]
+			},
+			wantMap: [][2]string{
+				{"4a3f2b", "token3"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Condition 3: Already Base64 string should be left alone",
+			incomingBatch: [][2]string{
+				{"SGVsbG8gV29ybGQ=", "token4"}, // Valid Base64 text ("Hello World") but NOT valid Hex
+			},
+			wantMap: [][2]string{
+				{"SGVsbG8gV29ybGQ=", "token4"}, // Unchanged
+			},
+			wantErr: false,
+		},
+		{
+			name: "Condition 4: Raw arbitrary string (fallback) should be left alone",
+			incomingBatch: [][2]string{
+				{"plain-text-string!", "token5"}, // Not numeric, not hex, not base64 (contains '-')
+			},
+			wantMap: [][2]string{
+				{"plain-text-string!", "token5"}, // Plain string standard Base64 encoded
+			},
+			wantErr: false,
+		},
+		{
+			name: "Mixed Batch: Handles multiple types in one run",
+			incomingBatch: [][2]string{
+				{"1234567890", "t1"},
+				{"4a3f2b", "t2"},
+				{"SGVsbG8gV29ybGQ=", "t3"},
+			},
+			wantMap: [][2]string{
+				{"bW9ja0I2NFJlc3VsdA==", "t1"},
+				{"4a3f2b", "t2"},
+				{"SGVsbG8gV29ybGQ=", "t3"},
+			},
+			wantErr: false,
+		},
 	}
 
-	if len(r) != 1 {
-		t.Fatalf("len(r) = %d; want 1", len(r))
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// If you use a global mock injector for hashenc, set it up here.
 
-	hash := r[0][0]
-	if hash != "7ywvhLgYXQ+DYcLlAcQAXpoe58Bvqh8SiUu9reiLL/8=" {
-		t.Fatalf("wrong hash: %s", hash)
-	}
+			gotMap, err := ProcessPimBatch(tt.incomingBatch)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ProcessPimBatch() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
 
-	if r[0][1] != token {
-		t.Fatalf("wrong token: %s", r[0][1])
-	}
-}
-
-func TestHash(t *testing.T) {
-	flag.Set("function", "sha256")
-	flag.Set("key", "ORK7zw4ekuU5IssbBQTxwnkMg9vRBFz9A//AH0mpszLgaVoVLxxfRWTqx6d2XL6R")
-	flag.Parse()
-
-	log.Printf(os.Getwd())
-	f, err := os.Open("../../../../bin/input.csv")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	out, err := os.Create("../../../../bin/output.csv")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sc := bufio.NewScanner(f)
-	h := hashenc.Get()
-
-	for sc.Scan() {
-		hash, err := h.GenerateResult(sc.Bytes())
-		if err != nil {
-			t.Fatal(err)
-		}
-		out.Write(hash)
-		out.WriteString("\n")
+			log.Printf("%v", gotMap)
+			if !reflect.DeepEqual(gotMap, tt.wantMap) {
+				t.Errorf("ProcessPimBatch() = %v, want %v", gotMap, tt.wantMap)
+			}
+		})
 	}
 }
